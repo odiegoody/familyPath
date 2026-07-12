@@ -19,6 +19,9 @@ import LiabilityDetail from "./pages/LiabilityDetail";
 import Members from "./pages/Members";
 import Categories from "./pages/Categories";
 import AddCategory from "./pages/AddCategory";
+import Investments from "./pages/Investments";
+import AddInvestment from "./pages/AddInvestment";
+import InvestmentDetail from "./pages/InvestmentDetail";
 
 function Layout() {
   const location = useLocation();
@@ -28,6 +31,7 @@ function Layout() {
     location.pathname === "/aset/baru" ||
     location.pathname === "/hutang/baru" ||
     location.pathname === "/kategori/baru" ||
+    location.pathname === "/investasi/baru" ||
     location.pathname.endsWith("/edit");
 
   return (
@@ -53,6 +57,10 @@ function Layout() {
         <Route path="/kategori" element={<Categories />} />
         <Route path="/kategori/baru" element={<AddCategory />} />
         <Route path="/kategori/:id/edit" element={<AddCategory />} />
+        <Route path="/investasi" element={<Investments />} />
+        <Route path="/investasi/baru" element={<AddInvestment />} />
+        <Route path="/investasi/:id" element={<InvestmentDetail />} />
+        <Route path="/investasi/:id/edit" element={<AddInvestment />} />
         <Route path="/tambah" element={<AddTransaction />} />
       </Routes>
       {!hideNav && <BottomNav />}

@@ -75,6 +75,30 @@ db.version(6).stores({
   liability_payments: "++id, liabilityId, amount, date, note, createdAt",
 });
 
+// v7: PEMISAHAN Aset vs Investasi (KEPUTUSAN USER) — Investasi jadi modul TERSENDIRI, terpisah dari Aset.
+// Beda logika dengan Aset: Aset dibeli SEKALI lalu nilainya diupdate (currentValue = update terakhir, fallback initialValue).
+// Investasi dibeli SECARA BERKALA (kontribusi berulang, misal setor reksadana tiap bulan) dan dihitung KUMULATIF sebagai cost basis:
+//   totalContributed = SUM(investment_contributions.amount) untuk investasi tsb.
+// Nilai sekarang tetap bisa diupdate manual per investasi (investment_value_updates), terpisah dari histori kontribusi.
+//   currentValue = investment_value_updates terakhir (by date), fallback ke totalContributed kalau belum pernah diupdate.
+// Data assets/asset_value_updates LAMA tidak dimigrasi — tetap di tabel assets seperti sebelumnya (keputusan user).
+db.version(7).stores({
+  members: "++id, name, createdAt",
+  categories: "++id, name, type, icon, color, isDefault",
+  transactions: "++id, type, amount, categoryId, memberId, date, createdAt, goalId, direction",
+  budgets: "++id, categoryId, month, amount, [categoryId+month]",
+  goals: "++id, name, icon, color, targetAmount, targetDate, createdAt",
+  assets:
+    "++id, name, category, icon, color, quantity, initialValue, purchaseDate, notes, createdAt, trackingFrequency",
+  asset_value_updates: "++id, assetId, value, date, note, createdAt, period, [assetId+period]",
+  liabilities:
+    "++id, name, category, icon, color, principalAmount, interestRate, dueDate, notes, createdAt",
+  liability_payments: "++id, liabilityId, amount, date, note, createdAt",
+  investments: "++id, name, category, icon, color, notes, createdAt",
+  investment_contributions: "++id, investmentId, amount, date, note, createdAt",
+  investment_value_updates: "++id, investmentId, value, date, note, createdAt",
+});
+
 // ---- Default seed data (runs once) ----
 const DEFAULT_CATEGORIES = [
   { name: "Makanan", type: "expense", icon: "utensils", color: "#c14f3d", isDefault: 1 },

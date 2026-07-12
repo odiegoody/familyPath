@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag } from "lucide-react";
+import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag, TrendingUp } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import { formatRupiah } from "../utils/format";
@@ -11,6 +11,7 @@ export default function More() {
   const budgetCount = useLiveQuery(() => db.budgets.count(), []);
   const goalCount = useLiveQuery(() => db.goals.count(), []);
   const assetCount = useLiveQuery(() => db.assets.count(), []);
+  const investmentCount = useLiveQuery(() => db.investments.count(), []);
   const liabilityCount = useLiveQuery(() => db.liabilities.count(), []);
   const categoryCount = useLiveQuery(() => db.categories.count(), []);
 
@@ -33,11 +34,19 @@ export default function More() {
     },
     {
       to: "/aset",
-      label: "Aset & Investasi",
-      desc: "Kas, saham, properti, kendaraan, emas",
+      label: "Aset & Liability",
+      desc: "Kas, properti, kendaraan, emas — dibeli sekali, nilai diupdate",
       icon: Landmark,
       color: "#94564a",
       count: assetCount,
+    },
+    {
+      to: "/investasi",
+      label: "Investasi",
+      desc: "Saham, reksadana, deposito, kripto — setoran berkala",
+      icon: TrendingUp,
+      color: "#1c6b37",
+      count: investmentCount,
     },
     {
       to: "/hutang",

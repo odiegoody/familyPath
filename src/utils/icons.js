@@ -95,6 +95,17 @@ export const ASSET_CATEGORIES = [
   { key: "other", label: "Lainnya", icon: "landmark", color: "#505f76" },
 ];
 
+// Kategori investasi — MODUL TERPISAH dari Aset (keputusan user).
+// Beda dengan Aset: instrumen ini dibeli/disetor SECARA BERKALA (kontribusi berulang),
+// jadi cost basis dihitung kumulatif dari total kontribusi, bukan nilai beli sekali di awal.
+export const INVESTMENT_CATEGORIES = [
+  { key: "stocks", label: "Saham", icon: "trending-up", color: "#3b7dd8" },
+  { key: "mutual_fund", label: "Reksadana", icon: "landmark", color: "#1c6b37" },
+  { key: "deposito", label: "Deposito", icon: "banknote", color: "#e0a72c" },
+  { key: "crypto", label: "Kripto", icon: "coins", color: "#8a5cf6" },
+  { key: "other", label: "Lainnya", icon: "more-horizontal", color: "#505f76" },
+];
+
 // Frekuensi tracking nilai aset — seberapa sering nilainya "seharusnya" diupdate
 export const ASSET_TRACKING_FREQUENCIES = [
   { key: "monthly", label: "Bulanan" },

@@ -7,7 +7,7 @@ const items = [
   { to: "/lainnya", label: "Lainnya", icon: Grid3x3 },
 ];
 
-const LAINNYA_PREFIXES = ["/lainnya", "/budget", "/goals", "/aset", "/hutang", "/anggota", "/kategori"];
+const LAINNYA_PREFIXES = ["/lainnya", "/budget", "/goals", "/aset", "/investasi", "/hutang", "/anggota", "/kategori"];
 
 export default function BottomNav() {
   const location = useLocation();
