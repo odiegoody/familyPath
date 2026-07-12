@@ -95,6 +95,13 @@ export const ASSET_CATEGORIES = [
   { key: "other", label: "Lainnya", icon: "landmark", color: "#505f76" },
 ];
 
+// Frekuensi tracking nilai aset — seberapa sering nilainya "seharusnya" diupdate
+export const ASSET_TRACKING_FREQUENCIES = [
+  { key: "monthly", label: "Bulanan" },
+  { key: "quarterly", label: "Kuartalan" },
+  { key: "manual", label: "Manual (kapan saja)" },
+];
+
 // Kategori liability/hutang — dipakai di form tambah hutang & filter
 export const LIABILITY_CATEGORIES = [
   { key: "mortgage", label: "KPR / Kredit Rumah", icon: "home", color: "#c14f3d" },

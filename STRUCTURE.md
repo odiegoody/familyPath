@@ -14,7 +14,7 @@ Desain mengikuti referensi "WealthPath" (navy/slate/hijau/coral, font Geist + In
 - lucide-react — icon set
 - recharts — sudah terpasang, belum dipakai (untuk grafik tren nanti)
 
-## Status: TAHAP 1–5 SELESAI ✅ + Reorganisasi Navigasi + Kategori Custom
+## Status: TAHAP 1–5 SELESAI ✅ + Reorganisasi Navigasi + Kategori Custom + PWA Fix + Asset Tracking Periodik
 - **Tahap 1**: Transaksi + Dashboard
 - **Tahap 2**: Budget
 - **Tahap 3**: Goal Tracker
@@ -24,7 +24,28 @@ Desain mengikuti referensi "WealthPath" (navy/slate/hijau/coral, font Geist + In
 - **+ Halaman kelola Anggota Keluarga**
 - **+ Kelola Kategori custom** (tambah/edit/hapus kategori transaksi sendiri)
 - **+ Rename total**: KeluargaPath → **FamilyPath**
-- **+ Revisi logika saldo**: setor ke goal sekarang MENGURANGI saldo, tarik dana MENAMBAH saldo (kebalikan dari keputusan awal Tahap 3)
+- **+ Revisi logika saldo**: setor ke goal sekarang MENGURANGI saldo, tarik dana MENAMBAH saldo
+- **+ Fix PWA install di Vercel** (MIME type manifest & service worker)
+- **+ Revisi Aset & Investasi jadi TRACKING periodik** (bulanan/kuartalan), bukan cuma catatan bebas
+
+### Fix PWA install di Vercel (KEPUTUSAN TEKNIS)
+Gejala: setelah deploy, "Add to Home Screen" di Android Chrome cuma bikin bookmark biasa (ada address bar), bukan install PWA standalone. Penyebab: Vercel kadang serve `manifest.webmanifest` dan `sw.js`/`registerSW.js` dengan Content-Type yang salah (bukan `application/manifest+json` / `application/javascript`), jadi Chrome gagal mem-parse manifest dan menganggap site TIDAK installable.
+- **Fix di `vercel.json`**: tambah `headers` array yang eksplisit set Content-Type untuk `/manifest.webmanifest`, `/sw.js`, `/registerSW.js`
+- **Fix di `index.html`**: tambah atribut `type="application/manifest+json"` di tag `<link rel="manifest">`
+- Kalau masih bermasalah setelah patch ini, langkah debug selanjutnya: cek response header asli pakai `curl -I <url>/manifest.webmanifest` dari terminal, pastikan `Content-Type` sudah benar setelah redeploy
+
+### Asset & Investasi — revisi jadi Tracking Periodik (KEPUTUSAN PENTING DARI USER)
+User menegaskan: tujuan modul Aset & Investasi adalah **tracking perkembangan**, bukan sekadar pencatatan nilai bebas kapan saja. Nilai aset "seharusnya" diupdate secara rutin (bulanan/kuartalan) supaya kelihatan growth-nya dari waktu ke waktu.
+- **Schema v6**: `assets` dapat field baru `trackingFrequency` (`"monthly"` / `"quarterly"` / `"manual"`, default `"monthly"`). `asset_value_updates` dapat field `period` (label periode, misal `"2026-07"` untuk bulanan atau `"2026-Q3"` untuk kuartalan) + compound index `[assetId+period]` untuk deteksi duplikat.
+- Helper baru di `format.js`: `getPeriodKey()`, `getPeriodLabel()`, `getNextDueDate()`, `isUpdateDue()` — logika kapan sebuah aset "jatuh tempo" untuk diupdate berdasarkan frekuensi trackingnya.
+- `AddAsset.jsx`: sekarang ada pilihan Frekuensi Tracking (Bulanan/Kuartalan/Manual) saat bikin aset baru.
+- `AssetCard.jsx` & `Assets.jsx`: badge merah "Perlu update" muncul otomatis kalau aset sudah lewat jadwal tracking-nya (dihitung dari update terakhir + frekuensi).
+- `AssetDetail.jsx`:
+  - Banner peringatan kalau aset itu due untuk diupdate
+  - **Grafik tren nilai** (line chart pakai `recharts`, baru dipakai pertama kali di app ini) — muncul otomatis kalau riwayat sudah ≥2 titik data
+  - Form "Update Nilai" sekarang cek periode: kalau user mau nambah entri untuk periode yang SUDAH ada datanya (misal 2 entri di bulan yang sama untuk tracking bulanan), muncul peringatan (bukan blokir keras, cuma warning) supaya user sadar
+  - Riwayat nilai menampilkan label periode + persentase perubahan antar periode (bukan cuma nominal delta seperti sebelumnya)
+- **Catatan**: recharts nambah ukuran bundle JS cukup signifikan (~350KB), muncul warning "chunk size" saat build — belum masalah fungsional, tapi kalau nanti mau dioptimasi bisa pakai code-splitting/dynamic import khusus untuk halaman yang pakai chart
 
 ### File yang sudah dibuat
 ```
@@ -124,10 +145,11 @@ Saldo Keluarga (Dashboard), Total Aset, dan Total Hutang masih **section terpisa
 
 ## Belum dikerjakan (kandidat tahap selanjutnya)
 - [ ] Net worth gabungan: Saldo Keluarga + Total Aset - Total Liability
-- [ ] Grafik tren bulanan & tren nilai aset (recharts sudah terpasang, belum dipakai)
+- [ ] Grafik tren untuk area lain (budget/goal), recharts sudah dipakai di Assets, bisa direplikasi
 - [ ] Notifikasi/peringatan proaktif saat mendekati/melebihi budget (saat ini baru visual)
 - [ ] Export/import data (backup manual, karena tidak ada server sync) — PENTING karena semua data cuma di 1 device
 - [ ] Laporan bulanan otomatis (ringkasan yang bisa di-share/print)
+- [ ] Optimasi bundle size (code-splitting recharts) kalau performa jadi masalah
 
 ## Cara Deploy
 1. Push folder ini ke GitHub repo (`odiegoody/keluargapath` misalnya)

@@ -58,6 +58,23 @@ db.version(5).stores({
   liability_payments: "++id, liabilityId, amount, date, note, createdAt",
 });
 
+// v6: aset & investasi jadi TRACKING periodik, bukan cuma catatan bebas (revisi Tahap 4)
+// trackingFrequency menentukan seberapa sering nilai aset "seharusnya" diupdate (bulanan/kuartalan/manual)
+// period pada asset_value_updates = label periode ("2026-07" untuk bulanan, "2026-Q3" untuk kuartalan) agar mudah dicek duplikat & dibuat grafik tren
+db.version(6).stores({
+  members: "++id, name, createdAt",
+  categories: "++id, name, type, icon, color, isDefault",
+  transactions: "++id, type, amount, categoryId, memberId, date, createdAt, goalId, direction",
+  budgets: "++id, categoryId, month, amount, [categoryId+month]",
+  goals: "++id, name, icon, color, targetAmount, targetDate, createdAt",
+  assets:
+    "++id, name, category, icon, color, quantity, initialValue, purchaseDate, notes, createdAt, trackingFrequency",
+  asset_value_updates: "++id, assetId, value, date, note, createdAt, period, [assetId+period]",
+  liabilities:
+    "++id, name, category, icon, color, principalAmount, interestRate, dueDate, notes, createdAt",
+  liability_payments: "++id, liabilityId, amount, date, note, createdAt",
+});
+
 // ---- Default seed data (runs once) ----
 const DEFAULT_CATEGORIES = [
   { name: "Makanan", type: "expense", icon: "utensils", color: "#c14f3d", isDefault: 1 },

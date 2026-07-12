@@ -1,11 +1,12 @@
 import { getIcon } from "../utils/icons";
-import { formatRupiah, formatPercent } from "../utils/format";
+import { formatRupiah, formatPercent, isUpdateDue } from "../utils/format";
 
-export default function AssetCard({ asset, currentValue, onClick }) {
+export default function AssetCard({ asset, currentValue, lastUpdateDate, onClick }) {
   const Icon = getIcon(asset.icon);
   const gain = currentValue - asset.initialValue;
   const gainPct = asset.initialValue ? (gain / asset.initialValue) * 100 : 0;
   const isPositive = gain >= 0;
+  const due = isUpdateDue(lastUpdateDate, asset.trackingFrequency);
 
   return (
     <button
@@ -23,6 +24,11 @@ export default function AssetCard({ asset, currentValue, onClick }) {
         <p className="font-display text-base font-semibold text-on-surface">
           {formatRupiah(currentValue)}
         </p>
+        {due && (
+          <span className="mt-1 inline-block rounded-full bg-danger-container px-2 py-0.5 text-[10px] font-semibold text-on-danger-container">
+            Perlu update
+          </span>
+        )}
       </div>
       <div className="shrink-0 text-right">
         <span

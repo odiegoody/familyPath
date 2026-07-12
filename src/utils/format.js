@@ -29,6 +29,50 @@ export function formatPercent(value, { showSign = true } = {}) {
   return `${sign}${n.toFixed(1)}%`;
 }
 
+// ---- Helper untuk tracking periodik aset (bulanan/kuartalan) ----
+
+// Hasilkan label periode dari tanggal, sesuai frekuensi tracking
+export function getPeriodKey(dateInput, frequency) {
+  const d = new Date(dateInput);
+  const y = d.getFullYear();
+  if (frequency === "quarterly") {
+    const q = Math.floor(d.getMonth() / 3) + 1;
+    return `${y}-Q${q}`;
+  }
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+// Ubah period key jadi label yang enak dibaca
+export function getPeriodLabel(periodKey) {
+  if (!periodKey) return "";
+  if (periodKey.includes("Q")) {
+    const [y, q] = periodKey.split("-Q");
+    return `Kuartal ${q} ${y}`;
+  }
+  const [y, m] = periodKey.split("-").map(Number);
+  return formatMonthYearID(new Date(y, m - 1, 1));
+}
+
+// Tanggal target update berikutnya, berdasarkan tanggal update terakhir & frekuensi
+export function getNextDueDate(lastDate, frequency) {
+  if (!lastDate || frequency === "manual") return null;
+  const d = new Date(lastDate);
+  if (frequency === "quarterly") {
+    d.setMonth(d.getMonth() + 3);
+  } else {
+    d.setMonth(d.getMonth() + 1);
+  }
+  return d.getTime();
+}
+
+// Apakah aset ini sudah waktunya diupdate lagi?
+export function isUpdateDue(lastDate, frequency) {
+  const nextDue = getNextDueDate(lastDate, frequency);
+  if (!nextDue) return false;
+  return Date.now() >= nextDue;
+}
+
 export function formatDateID(dateInput) {
   const d = new Date(dateInput);
   return new Intl.DateTimeFormat("id-ID", {

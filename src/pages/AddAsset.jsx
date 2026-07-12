@@ -4,8 +4,8 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Trash2 } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
-import { getIcon, ASSET_CATEGORIES } from "../utils/icons";
-import { formatRupiah, parseRupiahInput, todayISO } from "../utils/format";
+import { getIcon, ASSET_CATEGORIES, ASSET_TRACKING_FREQUENCIES } from "../utils/icons";
+import { formatRupiah, parseRupiahInput, todayISO, getPeriodKey } from "../utils/format";
 
 export default function AddAsset() {
   const navigate = useNavigate();
@@ -19,6 +19,7 @@ export default function AddAsset() {
   const [quantityStr, setQuantityStr] = useState("1");
   const [valueStr, setValueStr] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(todayISO());
+  const [trackingFrequency, setTrackingFrequency] = useState("monthly");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -29,6 +30,7 @@ export default function AddAsset() {
       setQuantityStr(String(existing.quantity ?? 1));
       setValueStr(String(existing.initialValue));
       setPurchaseDate(new Date(existing.purchaseDate).toISOString().slice(0, 10));
+      setTrackingFrequency(existing.trackingFrequency || "monthly");
       setNotes(existing.notes || "");
     }
   }, [existing]);
@@ -48,6 +50,7 @@ export default function AddAsset() {
       quantity: parseFloat(quantityStr) || 1,
       initialValue,
       purchaseDate: new Date(purchaseDate).getTime(),
+      trackingFrequency,
       notes: notes.trim(),
     };
     try {
@@ -55,12 +58,13 @@ export default function AddAsset() {
         await db.assets.update(assetId, payload);
       } else {
         const newId = await db.assets.add({ ...payload, createdAt: Date.now() });
-        // catat nilai awal sebagai entri pertama di riwayat nilai
+        // catat nilai awal sebagai entri pertama di riwayat nilai (titik data pertama untuk tracking)
         await db.asset_value_updates.add({
           assetId: newId,
           value: initialValue,
           date: new Date(purchaseDate).getTime(),
           note: "Nilai awal saat aset ditambahkan",
+          period: getPeriodKey(purchaseDate, trackingFrequency),
           createdAt: Date.now(),
         });
       }
@@ -181,6 +185,30 @@ export default function AddAsset() {
               className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-3 py-3 text-sm text-on-surface outline-none focus:border-primary"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+            Frekuensi Tracking
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {ASSET_TRACKING_FREQUENCIES.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setTrackingFrequency(f.key)}
+                className={`rounded-lg border py-2.5 text-xs font-semibold ${
+                  trackingFrequency === f.key
+                    ? "border-primary bg-primary text-on-primary"
+                    : "border-outline-variant text-on-surface"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-xs text-on-surface-variant">
+            Nanti aset ini bakal dikasih tanda "perlu update" kalau sudah lewat jadwalnya.
+          </p>
         </div>
 
         <div>

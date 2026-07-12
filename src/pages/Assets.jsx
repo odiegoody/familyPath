@@ -24,6 +24,17 @@ export default function Assets() {
     return map;
   }, [assets, updates]);
 
+  const lastUpdateByAsset = useMemo(() => {
+    const map = {};
+    (assets || []).forEach((a) => {
+      const assetUpdates = (updates || [])
+        .filter((u) => u.assetId === a.id)
+        .sort((x, y) => y.date - x.date);
+      map[a.id] = assetUpdates.length ? assetUpdates[0].date : a.purchaseDate;
+    });
+    return map;
+  }, [assets, updates]);
+
   const totals = useMemo(() => {
     const totalValue = (assets || []).reduce((s, a) => s + (currentValueByAsset[a.id] || 0), 0);
     const totalInitial = (assets || []).reduce((s, a) => s + a.initialValue, 0);
@@ -107,6 +118,7 @@ export default function Assets() {
                     key={a.id}
                     asset={a}
                     currentValue={currentValueByAsset[a.id] || 0}
+                    lastUpdateDate={lastUpdateByAsset[a.id]}
                     onClick={() => navigate(`/aset/${a.id}`)}
                   />
                 ))}
