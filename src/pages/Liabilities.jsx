@@ -33,7 +33,7 @@ export default function Liabilities() {
   return (
     <div className="min-h-screen bg-surface pb-24">
       <Header
-        title="Liability & Hutang"
+        title="Hutang"
         showBack
         right={
           <button
