@@ -99,6 +99,28 @@ db.version(7).stores({
   investment_value_updates: "++id, investmentId, value, date, note, createdAt",
 });
 
+// v8: tambah tabel investment_targets — target investasi dengan proyeksi Future Value,
+// bisa diset user (modal awal, setoran bulanan, target return %/tahun, durasi tahun),
+// dibandingkan dengan realisasi aktual (total investment_value_updates) dalam grafik garis.
+db.version(8).stores({
+  members: "++id, name, createdAt",
+  categories: "++id, name, type, icon, color, isDefault",
+  transactions: "++id, type, amount, categoryId, memberId, date, createdAt, goalId, direction",
+  budgets: "++id, categoryId, month, amount, [categoryId+month]",
+  goals: "++id, name, icon, color, targetAmount, targetDate, createdAt",
+  assets:
+    "++id, name, category, icon, color, quantity, initialValue, purchaseDate, notes, createdAt, trackingFrequency",
+  asset_value_updates: "++id, assetId, value, date, note, createdAt, period, [assetId+period]",
+  liabilities:
+    "++id, name, category, icon, color, principalAmount, interestRate, dueDate, notes, createdAt",
+  liability_payments: "++id, liabilityId, amount, date, note, createdAt",
+  investments: "++id, name, category, icon, color, notes, createdAt",
+  investment_contributions: "++id, investmentId, amount, date, note, createdAt",
+  investment_value_updates: "++id, investmentId, value, date, note, createdAt",
+  investment_targets:
+    "++id, name, startDate, initialAmount, monthlyContribution, annualReturnRate, years, createdAt",
+});
+
 // ---- Default seed data (runs once) ----
 const DEFAULT_CATEGORIES = [
   { name: "Makanan", type: "expense", icon: "utensils", color: "#c14f3d", isDefault: 1 },

@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Plus, TrendingUp } from "lucide-react";
+import { Plus, TrendingUp, Target } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import InvestmentCard from "../components/InvestmentCard";
@@ -70,6 +70,14 @@ export default function Investments() {
             </span>
           </div>
         </div>
+
+        <button
+          onClick={() => navigate("/investasi/target")}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest py-3 text-sm font-semibold text-on-surface"
+        >
+          <Target size={16} />
+          Target Investasi
+        </button>
 
         {investments.length === 0 ? (
           <div className="rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-8 text-center">

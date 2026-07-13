@@ -22,6 +22,7 @@ import AddCategory from "./pages/AddCategory";
 import Investments from "./pages/Investments";
 import AddInvestment from "./pages/AddInvestment";
 import InvestmentDetail from "./pages/InvestmentDetail";
+import InvestmentTarget from "./pages/InvestmentTarget";
 import Backup from "./pages/Backup";
 
 function Layout() {
@@ -60,6 +61,7 @@ function Layout() {
         <Route path="/kategori/:id/edit" element={<AddCategory />} />
         <Route path="/investasi" element={<Investments />} />
         <Route path="/investasi/baru" element={<AddInvestment />} />
+        <Route path="/investasi/target" element={<InvestmentTarget />} />
         <Route path="/investasi/:id" element={<InvestmentDetail />} />
         <Route path="/investasi/:id/edit" element={<AddInvestment />} />
         <Route path="/backup" element={<Backup />} />
