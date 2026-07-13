@@ -16,7 +16,7 @@ export default function InvestmentTarget() {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
 
-  if (target === undefined || !investmentValueUpdates || !investments) return null;
+  if (!investmentValueUpdates || !investments) return null;
 
   function startEdit() {
     setForm(
