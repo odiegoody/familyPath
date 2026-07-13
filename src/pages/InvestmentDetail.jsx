@@ -42,6 +42,7 @@ export default function InvestmentDetail() {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState("");
+  const [editingItem, setEditingItem] = useState(null); // null | { kind, id }
 
   if (!investment || !contributions || !valueUpdates) return null;
 
@@ -57,34 +58,69 @@ export default function InvestmentDetail() {
     setAmount("");
     setDate(todayISO());
     setNote("");
+    setEditingItem(null);
+  }
+
+  function openEditItem(h) {
+    setMode(h.kind === "contribution" ? "contribute" : "updateValue");
+    setAmount(String(h.kind === "contribution" ? h.amount : h.value));
+    setDate(new Date(h.date).toISOString().slice(0, 10));
+    setNote(h.note || "");
+    setEditingItem({ kind: h.kind, id: h.id });
+  }
+
+  function closeForm() {
+    setMode(null);
+    setEditingItem(null);
   }
 
   async function submitContribution(e) {
     e.preventDefault();
     const amt = parseRupiahInput(amount);
     if (!amt) return;
-    await db.investment_contributions.add({
+    const payload = {
       investmentId,
       amount: amt,
       date: new Date(date).getTime(),
       note: note.trim(),
-      createdAt: Date.now(),
-    });
-    setMode(null);
+    };
+    if (editingItem && editingItem.kind === "contribution") {
+      await db.investment_contributions.update(editingItem.id, payload);
+    } else {
+      await db.investment_contributions.add({ ...payload, createdAt: Date.now() });
+    }
+    closeForm();
   }
 
   async function submitValueUpdate(e) {
     e.preventDefault();
     const val = parseRupiahInput(amount);
     if (!val && val !== 0) return;
-    await db.investment_value_updates.add({
+    const payload = {
       investmentId,
       value: val,
       date: new Date(date).getTime(),
       note: note.trim(),
-      createdAt: Date.now(),
-    });
-    setMode(null);
+    };
+    if (editingItem && editingItem.kind === "value") {
+      await db.investment_value_updates.update(editingItem.id, payload);
+    } else {
+      await db.investment_value_updates.add({ ...payload, createdAt: Date.now() });
+    }
+    closeForm();
+  }
+
+  async function deleteHistoryItem(h) {
+    const label = h.kind === "contribution" ? "kontribusi" : "update nilai";
+    if (!window.confirm(`Hapus riwayat ${label} ini?`)) return;
+    if (h.kind === "contribution") {
+      await db.investment_contributions.delete(h.id);
+    } else {
+      await db.investment_value_updates.delete(h.id);
+    }
+    if (editingItem && editingItem.kind === h.kind && editingItem.id === h.id) {
+      closeForm();
+    }
   }
 
   async function handleDelete() {
@@ -191,7 +227,13 @@ export default function InvestmentDetail() {
             className="space-y-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4"
           >
             <p className="text-sm font-semibold text-on-surface">
-              {mode === "contribute" ? "Tambah Kontribusi" : "Update Nilai Sekarang"}
+              {editingItem
+                ? mode === "contribute"
+                  ? "Edit Kontribusi"
+                  : "Edit Update Nilai"
+                : mode === "contribute"
+                ? "Tambah Kontribusi"
+                : "Update Nilai Sekarang"}
             </p>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">
@@ -231,7 +273,7 @@ export default function InvestmentDetail() {
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
-                onClick={() => setMode(null)}
+                onClick={closeForm}
                 className="flex-1 rounded-lg border border-outline-variant py-2.5 text-sm font-medium text-on-surface-variant"
               >
                 Batal
@@ -259,9 +301,9 @@ export default function InvestmentDetail() {
               {history.map((h) => (
                 <div
                   key={`${h.kind}-${h.id}`}
-                  className="flex items-center justify-between rounded-xl border border-outline-variant bg-surface-container-lowest p-3.5"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3.5"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium text-on-surface">
                       {h.kind === "contribution" ? "Kontribusi" : "Update Nilai"}
                     </p>
@@ -278,6 +320,22 @@ export default function InvestmentDetail() {
                     {h.kind === "contribution" ? "+" : ""}
                     {formatRupiah(h.kind === "contribution" ? h.amount : h.value)}
                   </p>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <button
+                      onClick={() => openEditItem(h)}
+                      aria-label="Edit riwayat"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant active:bg-surface-container-high"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      onClick={() => deleteHistoryItem(h)}
+                      aria-label="Hapus riwayat"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-danger active:bg-danger-container"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
