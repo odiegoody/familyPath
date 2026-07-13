@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag, TrendingUp } from "lucide-react";
+import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag, TrendingUp, DatabaseBackup } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import { formatRupiah } from "../utils/format";
@@ -71,6 +71,14 @@ export default function More() {
       icon: Tag,
       color: "#8a5cf6",
       count: categoryCount,
+    },
+    {
+      to: "/backup",
+      label: "Backup & Restore",
+      desc: "Amankan semua data ke file, atau pulihkan dari backup",
+      icon: DatabaseBackup,
+      color: "#00b0b9",
+      count: null,
     },
   ];
 
