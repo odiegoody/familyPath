@@ -167,6 +167,24 @@ export const CATEGORY_COLOR_OPTIONS = [
   "#d97757",
 ];
 
+// Konfigurasi satuan untuk kategori investasi tertentu — dipakai di form Tambah Kontribusi
+// supaya bisa dicatat jumlah unit (lembar/lot saham, gram emas), bukan cuma nominal Rupiah.
+export const INVESTMENT_UNIT_CONFIG = {
+  stocks: {
+    label: "Jumlah Saham",
+    unitOptions: [
+      { key: "lembar", label: "Lembar" },
+      { key: "lot", label: "Lot (1 lot = 100 lembar)" },
+    ],
+    defaultUnit: "lembar",
+  },
+  gold: {
+    label: "Berat Emas",
+    unitOptions: [{ key: "gram", label: "Gram" }],
+    defaultUnit: "gram",
+  },
+};
+
 export function getIcon(name) {
   return ICON_MAP[name] || Tag;
 }

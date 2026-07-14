@@ -4,7 +4,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Pencil, Trash2, PlusCircle, TrendingUp } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
-import { getIcon } from "../utils/icons";
+import { getIcon, INVESTMENT_UNIT_CONFIG } from "../utils/icons";
 import {
   formatRupiah,
   formatPercent,
@@ -43,8 +43,21 @@ export default function InvestmentDetail() {
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState("");
   const [editingItem, setEditingItem] = useState(null); // null | { kind, id }
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("");
 
   if (!investment || !contributions || !valueUpdates) return null;
+
+  const unitConfig = INVESTMENT_UNIT_CONFIG[investment.category] || null;
+  const totalQuantity = contributions.reduce((s, c) => s + (Number(c.quantity) || 0), 0);
+  const quantityUnitLabel = (() => {
+    const withQty = contributions.find((c) => c.quantity && c.unit);
+    if (withQty) {
+      const opt = unitConfig?.unitOptions.find((o) => o.key === withQty.unit);
+      return opt ? opt.label : withQty.unit;
+    }
+    return unitConfig?.unitOptions.find((o) => o.key === unitConfig.defaultUnit)?.label || "";
+  })();
 
   const totalContributed = contributions.reduce((s, c) => s + c.amount, 0);
   const currentValue = valueUpdates.length ? valueUpdates[0].value : totalContributed;
@@ -58,6 +71,8 @@ export default function InvestmentDetail() {
     setAmount("");
     setDate(todayISO());
     setNote("");
+    setQuantity("");
+    setUnit(unitConfig ? unitConfig.defaultUnit : "");
     setEditingItem(null);
   }
 
@@ -66,23 +81,29 @@ export default function InvestmentDetail() {
     setAmount(String(h.kind === "contribution" ? h.amount : h.value));
     setDate(new Date(h.date).toISOString().slice(0, 10));
     setNote(h.note || "");
+    setQuantity(h.quantity ? String(h.quantity) : "");
+    setUnit(h.unit || (unitConfig ? unitConfig.defaultUnit : ""));
     setEditingItem({ kind: h.kind, id: h.id });
   }
 
   function closeForm() {
     setMode(null);
     setEditingItem(null);
+    setQuantity("");
+    setUnit("");
   }
 
   async function submitContribution(e) {
     e.preventDefault();
     const amt = parseRupiahInput(amount);
     if (!amt) return;
+    const qty = quantity ? Number(quantity) : null;
     const payload = {
       investmentId,
       amount: amt,
       date: new Date(date).getTime(),
       note: note.trim(),
+      ...(unitConfig && qty ? { quantity: qty, unit } : {}),
     };
     if (editingItem && editingItem.kind === "contribution") {
       await db.investment_contributions.update(editingItem.id, payload);
@@ -202,6 +223,12 @@ export default function InvestmentDetail() {
               {investment.notes}
             </p>
           )}
+
+          {unitConfig && totalQuantity > 0 && (
+            <p className="mt-3 rounded-lg bg-secondary-container px-3 py-2 text-xs text-on-secondary-container">
+              Total dimiliki: <span className="font-semibold">{totalQuantity} {quantityUnitLabel}</span>
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -259,6 +286,41 @@ export default function InvestmentDetail() {
                 className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
               />
             </div>
+
+            {mode === "contribute" && unitConfig && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">
+                    {unitConfig.label} (opsional)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    inputMode="decimal"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">
+                    Satuan
+                  </label>
+                  <select
+                    value={unit}
+                    onChange={(e) => setUnit(e.target.value)}
+                    className="w-full rounded-lg border border-outline-variant bg-surface px-3 py-2.5 text-sm text-on-surface outline-none focus:border-primary"
+                  >
+                    {unitConfig.unitOptions.map((o) => (
+                      <option key={o.key} value={o.key}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
             <div>
               <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">
                 Catatan (opsional)
@@ -309,6 +371,9 @@ export default function InvestmentDetail() {
                     </p>
                     <p className="text-xs text-on-surface-variant">
                       {formatDateID(h.date)}
+                      {h.kind === "contribution" && h.quantity ? ` · ${h.quantity} ${
+                        unitConfig?.unitOptions.find((o) => o.key === h.unit)?.label || h.unit || ""
+                      }` : ""}
                       {h.note ? ` · ${h.note}` : ""}
                     </p>
                   </div>
