@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Trash2, PiggyBank } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import { getIcon } from "../utils/icons";
 import { formatRupiah, parseRupiahInput, todayISO } from "../utils/format";
@@ -15,9 +15,12 @@ export default function AddTransaction() {
   const initialGoalId = params.get("goal") ? Number(params.get("goal")) : null;
   const initialDirection = params.get("dir") || "in";
 
-  const categories = useLiveQuery(() => db.categories.toArray(), []);
-  const members = useLiveQuery(() => db.members.toArray(), []);
-  const goals = useLiveQuery(() => db.goals.toArray(), []);
+  const categories = useLiveQuery(
+    () => db.categories.filter((c) => !c.deleted).toArray(),
+    []
+  );
+  const members = useLiveQuery(() => db.members.filter((m) => !m.deleted).toArray(), []);
+  const goals = useLiveQuery(() => db.goals.filter((g) => !g.deleted).toArray(), []);
   const existing = useLiveQuery(
     () => (editId ? db.transactions.get(editId) : undefined),
     [editId]
@@ -95,9 +98,9 @@ export default function AddTransaction() {
     };
     try {
       if (editId) {
-        await db.transactions.update(editId, payload);
+        await db.transactions.update(editId, withUpdatedAt(payload));
       } else {
-        await db.transactions.add({ ...payload, createdAt: Date.now() });
+        await db.transactions.add(withSync({ ...payload, createdAt: Date.now() }));
       }
       navigate(-1);
     } finally {
@@ -108,7 +111,7 @@ export default function AddTransaction() {
   async function handleDelete() {
     if (!editId) return;
     if (!confirm("Hapus transaksi ini?")) return;
-    await db.transactions.delete(editId);
+    await softDelete("transactions", editId);
     navigate(-1);
   }
 

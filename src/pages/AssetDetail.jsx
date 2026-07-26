@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { Pencil, RefreshCw, Check, X, AlertTriangle } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync } from "../db/db";
 import Header from "../components/Header";
 import { getIcon, ASSET_TRACKING_FREQUENCIES } from "../utils/icons";
 import {
@@ -24,7 +24,13 @@ export default function AssetDetail() {
 
   const asset = useLiveQuery(() => db.assets.get(assetId), [assetId]);
   const updates = useLiveQuery(
-    () => db.asset_value_updates.where("assetId").equals(assetId).reverse().sortBy("date"),
+    () =>
+      db.asset_value_updates
+        .where("assetId")
+        .equals(assetId)
+        .and((u) => !u.deleted)
+        .reverse()
+        .sortBy("date"),
     [assetId]
   );
 
@@ -79,14 +85,16 @@ export default function AssetDetail() {
     if (value <= 0) return;
     setSavingUpdate(true);
     try {
-      await db.asset_value_updates.add({
-        assetId,
-        value,
-        date: new Date(newDate).getTime(),
-        note: "",
-        period: getPeriodKey(newDate, frequency),
-        createdAt: Date.now(),
-      });
+      await db.asset_value_updates.add(
+        withSync({
+          assetId,
+          value,
+          date: new Date(newDate).getTime(),
+          note: "",
+          period: getPeriodKey(newDate, frequency),
+          createdAt: Date.now(),
+        })
+      );
       setShowUpdateForm(false);
       setNewValueStr("");
       setNewDate(todayISO());

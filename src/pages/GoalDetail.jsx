@@ -18,7 +18,7 @@ export default function GoalDetail() {
       db.transactions
         .where("goalId")
         .equals(goalId)
-        .and((t) => t.type === "saving")
+        .and((t) => t.type === "saving" && !t.deleted)
         .reverse()
         .sortBy("date"),
     [goalId]

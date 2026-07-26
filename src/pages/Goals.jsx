@@ -9,9 +9,14 @@ import { formatRupiah } from "../utils/format";
 
 export default function Goals() {
   const navigate = useNavigate();
-  const goals = useLiveQuery(() => db.goals.toArray(), []);
+  const goals = useLiveQuery(() => db.goals.filter((g) => !g.deleted).toArray(), []);
   const savingTx = useLiveQuery(
-    () => db.transactions.where("type").equals("saving").toArray(),
+    () =>
+      db.transactions
+        .where("type")
+        .equals("saving")
+        .and((t) => !t.deleted)
+        .toArray(),
     []
   );
 

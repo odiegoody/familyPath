@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt } from "../db/db";
 import Header from "../components/Header";
 import { getIcon, INVESTMENT_CATEGORIES } from "../utils/icons";
 
@@ -36,23 +36,28 @@ export default function AddInvestment() {
     const cat = INVESTMENT_CATEGORIES.find((c) => c.key === category);
 
     if (isEdit) {
-      await db.investments.update(investmentId, {
-        name: name.trim(),
-        category,
-        icon: cat.icon,
-        color: cat.color,
-        notes: notes.trim(),
-      });
+      await db.investments.update(
+        investmentId,
+        withUpdatedAt({
+          name: name.trim(),
+          category,
+          icon: cat.icon,
+          color: cat.color,
+          notes: notes.trim(),
+        })
+      );
       navigate(`/investasi/${investmentId}`);
     } else {
-      const newId = await db.investments.add({
-        name: name.trim(),
-        category,
-        icon: cat.icon,
-        color: cat.color,
-        notes: notes.trim(),
-        createdAt: Date.now(),
-      });
+      const newId = await db.investments.add(
+        withSync({
+          name: name.trim(),
+          category,
+          icon: cat.icon,
+          color: cat.color,
+          notes: notes.trim(),
+          createdAt: Date.now(),
+        })
+      );
       navigate(`/investasi/${newId}`);
     }
   }

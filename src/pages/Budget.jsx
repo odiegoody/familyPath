@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import BudgetRow from "../components/BudgetRow";
 import {
@@ -16,9 +16,22 @@ export default function Budget() {
   const [month, setMonth] = useState(monthKey());
   const { from, to } = monthKeyRange(month);
 
-  const categories = useLiveQuery(() => db.categories.where("type").equals("expense").toArray(), []);
+  const categories = useLiveQuery(
+    () =>
+      db.categories
+        .where("type")
+        .equals("expense")
+        .and((c) => !c.deleted)
+        .toArray(),
+    []
+  );
   const budgets = useLiveQuery(
-    () => db.budgets.where("month").equals(month).toArray(),
+    () =>
+      db.budgets
+        .where("month")
+        .equals(month)
+        .and((b) => !b.deleted)
+        .toArray(),
     [month]
   );
   const transactions = useLiveQuery(
@@ -26,7 +39,7 @@ export default function Budget() {
       db.transactions
         .where("date")
         .between(from, to, true, true)
-        .and((t) => t.type === "expense")
+        .and((t) => t.type === "expense" && !t.deleted)
         .toArray(),
     [from, to]
   );
@@ -54,13 +67,13 @@ export default function Budget() {
   async function handleSaveBudget(categoryId, amount) {
     const existing = budgetMap[categoryId];
     if (amount <= 0) {
-      if (existing) await db.budgets.delete(existing.id);
+      if (existing) await softDelete("budgets", existing.id);
       return;
     }
     if (existing) {
-      await db.budgets.update(existing.id, { amount });
+      await db.budgets.update(existing.id, withUpdatedAt({ amount }));
     } else {
-      await db.budgets.add({ categoryId, month, amount });
+      await db.budgets.add(withSync({ categoryId, month, amount }));
     }
   }
 
@@ -95,11 +108,11 @@ export default function Budget() {
           </button>
         </div>
 
-        {/* Overall summary */}
-        {!loading && totals.totalBudget > 0 && (
+        {/* Overall summary — grand total budget semua kategori */}
+        {!loading && (
           <div className="rounded-xl bg-primary-container p-4 text-on-primary shadow-modal">
             <p className="font-display text-[11px] font-semibold uppercase tracking-wider text-on-primary/60">
-              Total Budget Bulan Ini
+              Total Budget Bulan Ini (Semua Kategori)
             </p>
             <div className="mt-1 flex items-baseline justify-between">
               <span className="font-display text-2xl font-semibold">
@@ -109,17 +122,25 @@ export default function Budget() {
                 / {formatRupiah(totals.totalBudget)}
               </span>
             </div>
-            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className={`h-full rounded-full ${overallOver ? "bg-danger" : "bg-tertiary-fixed"}`}
-                style={{ width: `${overallPct}%` }}
-              />
-            </div>
-            <p className={`mt-1.5 text-xs font-medium ${overallOver ? "text-red-300" : "text-on-primary/60"}`}>
-              {overallOver
-                ? `Melebihi budget sebesar ${formatRupiah(totals.totalSpent - totals.totalBudget)}`
-                : `Sisa ${formatRupiah(totals.totalBudget - totals.totalSpent)} untuk bulan ini`}
-            </p>
+            {totals.totalBudget > 0 ? (
+              <>
+                <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full rounded-full ${overallOver ? "bg-danger" : "bg-tertiary-fixed"}`}
+                    style={{ width: `${overallPct}%` }}
+                  />
+                </div>
+                <p className={`mt-1.5 text-xs font-medium ${overallOver ? "text-red-300" : "text-on-primary/60"}`}>
+                  {overallOver
+                    ? `Melebihi budget sebesar ${formatRupiah(totals.totalSpent - totals.totalBudget)}`
+                    : `Sisa ${formatRupiah(totals.totalBudget - totals.totalSpent)} untuk bulan ini`}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1.5 text-xs font-medium text-on-primary/60">
+                Belum ada budget yang diset untuk bulan ini. Atur budget per kategori di bawah.
+              </p>
+            )}
           </div>
         )}
 

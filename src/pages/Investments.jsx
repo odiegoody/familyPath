@@ -10,9 +10,18 @@ import { formatRupiah, formatPercent } from "../utils/format";
 export default function Investments() {
   const navigate = useNavigate();
 
-  const investments = useLiveQuery(() => db.investments.orderBy("createdAt").reverse().toArray(), []);
-  const contributions = useLiveQuery(() => db.investment_contributions.toArray(), []);
-  const valueUpdates = useLiveQuery(() => db.investment_value_updates.toArray(), []);
+  const investments = useLiveQuery(
+    () => db.investments.orderBy("createdAt").reverse().filter((i) => !i.deleted).toArray(),
+    []
+  );
+  const contributions = useLiveQuery(
+    () => db.investment_contributions.filter((c) => !c.deleted).toArray(),
+    []
+  );
+  const valueUpdates = useLiveQuery(
+    () => db.investment_value_updates.filter((v) => !v.deleted).toArray(),
+    []
+  );
 
   if (!investments || !contributions || !valueUpdates) return null;
 

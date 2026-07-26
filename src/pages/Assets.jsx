@@ -10,8 +10,11 @@ import { formatRupiah, formatPercent } from "../utils/format";
 
 export default function Assets() {
   const navigate = useNavigate();
-  const assets = useLiveQuery(() => db.assets.toArray(), []);
-  const updates = useLiveQuery(() => db.asset_value_updates.toArray(), []);
+  const assets = useLiveQuery(() => db.assets.filter((a) => !a.deleted).toArray(), []);
+  const updates = useLiveQuery(
+    () => db.asset_value_updates.filter((u) => !u.deleted).toArray(),
+    []
+  );
 
   const currentValueByAsset = useMemo(() => {
     const map = {};

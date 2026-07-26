@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Trash2 } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import { getIcon, CATEGORY_ICON_OPTIONS, CATEGORY_COLOR_OPTIONS } from "../utils/icons";
 
@@ -40,9 +40,9 @@ export default function AddCategory() {
     const payload = { name: name.trim(), type, icon, color };
     try {
       if (categoryId) {
-        await db.categories.update(categoryId, payload);
+        await db.categories.update(categoryId, withUpdatedAt(payload));
       } else {
-        await db.categories.add({ ...payload, isDefault: 0 });
+        await db.categories.add(withSync({ ...payload, isDefault: 0 }));
       }
       navigate("/kategori");
     } finally {
@@ -52,8 +52,12 @@ export default function AddCategory() {
 
   async function handleDelete() {
     if (!categoryId) return;
-    const txCount = await db.transactions.where("categoryId").equals(categoryId).count();
-    const budgetCount = await db.budgets.where("categoryId").equals(categoryId).count();
+    const txCount = (
+      await db.transactions.where("categoryId").equals(categoryId).toArray()
+    ).filter((t) => !t.deleted).length;
+    const budgetCount = (
+      await db.budgets.where("categoryId").equals(categoryId).toArray()
+    ).filter((b) => !b.deleted).length;
     if (txCount > 0 || budgetCount > 0) {
       alert(
         `Kategori ini masih dipakai di ${txCount} transaksi dan ${budgetCount} budget. Hapus/ubah dulu transaksi & budget yang pakai kategori ini sebelum menghapus kategorinya.`
@@ -61,7 +65,7 @@ export default function AddCategory() {
       return;
     }
     if (!confirm("Hapus kategori ini?")) return;
-    await db.categories.delete(categoryId);
+    await softDelete("categories", categoryId);
     navigate("/kategori");
   }
 

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Target, Pencil, Check, X } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt } from "../db/db";
 import Header from "../components/Header";
 import LineChartDual from "../components/LineChartDual";
 import { formatRupiah, formatPercent, parseRupiahInput, todayISO } from "../utils/format";
@@ -9,9 +9,15 @@ import { projectionSeries, futureValue } from "../utils/finance";
 
 // Hanya ada 1 target aktif (disederhanakan) — kalau sudah ada, kita update record yang sama.
 export default function InvestmentTarget() {
-  const target = useLiveQuery(() => db.investment_targets.toCollection().first(), []);
-  const investmentValueUpdates = useLiveQuery(() => db.investment_value_updates.toArray(), []);
-  const investments = useLiveQuery(() => db.investments.toArray(), []);
+  const target = useLiveQuery(
+    () => db.investment_targets.filter((t) => !t.deleted).first(),
+    []
+  );
+  const investmentValueUpdates = useLiveQuery(
+    () => db.investment_value_updates.filter((u) => !u.deleted).toArray(),
+    []
+  );
+  const investments = useLiveQuery(() => db.investments.filter((i) => !i.deleted).toArray(), []);
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -51,9 +57,9 @@ export default function InvestmentTarget() {
       years: Number(form.years) || 1,
     };
     if (target) {
-      await db.investment_targets.update(target.id, payload);
+      await db.investment_targets.update(target.id, withUpdatedAt(payload));
     } else {
-      await db.investment_targets.add({ ...payload, createdAt: Date.now() });
+      await db.investment_targets.add(withSync({ ...payload, createdAt: Date.now() }));
     }
     setEditing(false);
   }

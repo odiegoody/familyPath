@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Pencil, Check, X, CreditCard } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync } from "../db/db";
 import Header from "../components/Header";
 import { getIcon } from "../utils/icons";
 import { formatRupiah, formatDateID, parseRupiahInput, todayISO } from "../utils/format";
@@ -14,7 +14,12 @@ export default function LiabilityDetail() {
 
   const liability = useLiveQuery(() => db.liabilities.get(liabilityId), [liabilityId]);
   const payments = useLiveQuery(
-    () => db.liability_payments.where("liabilityId").equals(liabilityId).toArray(),
+    () =>
+      db.liability_payments
+        .where("liabilityId")
+        .equals(liabilityId)
+        .and((p) => !p.deleted)
+        .toArray(),
     [liabilityId]
   );
 
@@ -38,13 +43,15 @@ export default function LiabilityDetail() {
     if (amount <= 0) return;
     setSavingPay(true);
     try {
-      await db.liability_payments.add({
-        liabilityId,
-        amount,
-        date: new Date(payDate).getTime(),
-        note: "",
-        createdAt: Date.now(),
-      });
+      await db.liability_payments.add(
+        withSync({
+          liabilityId,
+          amount,
+          date: new Date(payDate).getTime(),
+          note: "",
+          createdAt: Date.now(),
+        })
+      );
       setShowForm(false);
       setAmountStr("");
       setPayDate(todayISO());

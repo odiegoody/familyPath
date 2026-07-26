@@ -9,8 +9,11 @@ import { formatRupiah } from "../utils/format";
 
 export default function Liabilities() {
   const navigate = useNavigate();
-  const liabilities = useLiveQuery(() => db.liabilities.toArray(), []);
-  const payments = useLiveQuery(() => db.liability_payments.toArray(), []);
+  const liabilities = useLiveQuery(() => db.liabilities.filter((l) => !l.deleted).toArray(), []);
+  const payments = useLiveQuery(
+    () => db.liability_payments.filter((p) => !p.deleted).toArray(),
+    []
+  );
 
   const balanceByLiability = useMemo(() => {
     const map = {};

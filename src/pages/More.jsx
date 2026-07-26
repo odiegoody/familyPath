@@ -8,12 +8,30 @@ import { formatRupiah } from "../utils/format";
 export default function More() {
   const navigate = useNavigate();
 
-  const budgetCount = useLiveQuery(() => db.budgets.count(), []);
-  const goalCount = useLiveQuery(() => db.goals.count(), []);
-  const assetCount = useLiveQuery(() => db.assets.count(), []);
-  const investmentCount = useLiveQuery(() => db.investments.count(), []);
-  const liabilityCount = useLiveQuery(() => db.liabilities.count(), []);
-  const categoryCount = useLiveQuery(() => db.categories.count(), []);
+  const budgetCount = useLiveQuery(
+    async () => (await db.budgets.toArray()).filter((b) => !b.deleted).length,
+    []
+  );
+  const goalCount = useLiveQuery(
+    async () => (await db.goals.toArray()).filter((g) => !g.deleted).length,
+    []
+  );
+  const assetCount = useLiveQuery(
+    async () => (await db.assets.toArray()).filter((a) => !a.deleted).length,
+    []
+  );
+  const investmentCount = useLiveQuery(
+    async () => (await db.investments.toArray()).filter((i) => !i.deleted).length,
+    []
+  );
+  const liabilityCount = useLiveQuery(
+    async () => (await db.liabilities.toArray()).filter((l) => !l.deleted).length,
+    []
+  );
+  const categoryCount = useLiveQuery(
+    async () => (await db.categories.toArray()).filter((c) => !c.deleted).length,
+    []
+  );
 
   const items = [
     {

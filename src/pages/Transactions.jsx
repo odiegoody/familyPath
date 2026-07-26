@@ -11,10 +11,13 @@ export default function Transactions() {
   const [filter, setFilter] = useState("all"); // all | income | expense | saving
   const [memberFilter, setMemberFilter] = useState("all");
 
-  const transactions = useLiveQuery(() => db.transactions.orderBy("date").reverse().toArray(), []);
-  const categories = useLiveQuery(() => db.categories.toArray(), []);
-  const members = useLiveQuery(() => db.members.toArray(), []);
-  const goals = useLiveQuery(() => db.goals.toArray(), []);
+  const transactions = useLiveQuery(
+    () => db.transactions.orderBy("date").reverse().filter((t) => !t.deleted).toArray(),
+    []
+  );
+  const categories = useLiveQuery(() => db.categories.filter((c) => !c.deleted).toArray(), []);
+  const members = useLiveQuery(() => db.members.filter((m) => !m.deleted).toArray(), []);
+  const goals = useLiveQuery(() => db.goals.filter((g) => !g.deleted).toArray(), []);
 
   const categoryMap = useMemo(() => {
     const map = {};

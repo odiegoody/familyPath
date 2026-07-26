@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Plus, Trash2, Pencil, Check, X, User } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 
 export default function Members() {
-  const members = useLiveQuery(() => db.members.toArray(), []);
+  const members = useLiveQuery(() => db.members.filter((m) => !m.deleted).toArray(), []);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [nameInput, setNameInput] = useState("");
@@ -13,7 +13,7 @@ export default function Members() {
   async function handleAdd() {
     const name = nameInput.trim();
     if (!name) return;
-    await db.members.add({ name, createdAt: Date.now() });
+    await db.members.add(withSync({ name, createdAt: Date.now() }));
     setNameInput("");
     setAdding(false);
   }
@@ -21,19 +21,21 @@ export default function Members() {
   async function handleUpdate(id) {
     const name = nameInput.trim();
     if (!name) return;
-    await db.members.update(id, { name });
+    await db.members.update(id, withUpdatedAt({ name }));
     setEditingId(null);
     setNameInput("");
   }
 
   async function handleDelete(id) {
-    const txCount = await db.transactions.where("memberId").equals(id).count();
+    const txCount = (
+      await db.transactions.where("memberId").equals(id).toArray()
+    ).filter((t) => !t.deleted).length;
     const msg =
       txCount > 0
         ? `Anggota ini punya ${txCount} transaksi tercatat. Menghapus anggota TIDAK menghapus transaksinya, tapi label "dicatat oleh" jadi tidak valid. Lanjutkan hapus?`
         : "Hapus anggota ini?";
     if (!confirm(msg)) return;
-    await db.members.delete(id);
+    await softDelete("members", id);
   }
 
   const loading = members === undefined;

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Trash2 } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import { getIcon, GOAL_ICON_OPTIONS } from "../utils/icons";
 import { formatRupiah, parseRupiahInput } from "../utils/format";
@@ -57,9 +57,9 @@ export default function AddGoal() {
     };
     try {
       if (goalId) {
-        await db.goals.update(goalId, payload);
+        await db.goals.update(goalId, withUpdatedAt(payload));
       } else {
-        await db.goals.add({ ...payload, createdAt: Date.now() });
+        await db.goals.add(withSync({ ...payload, createdAt: Date.now() }));
       }
       navigate("/goals");
     } finally {
@@ -70,7 +70,7 @@ export default function AddGoal() {
   async function handleDelete() {
     if (!goalId) return;
     if (!confirm("Hapus goal ini? Riwayat setoran yang terkait tidak akan terhapus otomatis.")) return;
-    await db.goals.delete(goalId);
+    await softDelete("goals", goalId);
     navigate("/goals");
   }
 

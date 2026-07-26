@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { Trash2 } from "lucide-react";
-import { db } from "../db/db";
+import { db, withSync, withUpdatedAt, softDelete, softDeleteWhere } from "../db/db";
 import Header from "../components/Header";
 import { getIcon, LIABILITY_CATEGORIES } from "../utils/icons";
 import { formatRupiah, parseRupiahInput, todayISO } from "../utils/format";
@@ -56,9 +56,9 @@ export default function AddLiability() {
     };
     try {
       if (liabilityId) {
-        await db.liabilities.update(liabilityId, payload);
+        await db.liabilities.update(liabilityId, withUpdatedAt(payload));
       } else {
-        await db.liabilities.add({ ...payload, createdAt: Date.now() });
+        await db.liabilities.add(withSync({ ...payload, createdAt: Date.now() }));
       }
       navigate("/hutang");
     } finally {
@@ -69,8 +69,8 @@ export default function AddLiability() {
   async function handleDelete() {
     if (!liabilityId) return;
     if (!confirm("Hapus hutang ini beserta seluruh riwayat pembayarannya?")) return;
-    await db.liability_payments.where("liabilityId").equals(liabilityId).delete();
-    await db.liabilities.delete(liabilityId);
+    await softDeleteWhere("liability_payments", "liabilityId", liabilityId);
+    await softDelete("liabilities", liabilityId);
     navigate("/hutang");
   }
 

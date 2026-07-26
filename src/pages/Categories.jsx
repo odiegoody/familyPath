@@ -8,7 +8,7 @@ import { getIcon } from "../utils/icons";
 
 export default function Categories() {
   const navigate = useNavigate();
-  const categories = useLiveQuery(() => db.categories.toArray(), []);
+  const categories = useLiveQuery(() => db.categories.filter((c) => !c.deleted).toArray(), []);
 
   const grouped = useMemo(() => {
     const expense = (categories || []).filter((c) => c.type === "expense");
