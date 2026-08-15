@@ -1,25 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Search, X, ArrowUpDown } from "lucide-react";
+import { Search, X } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import TransactionRow from "../components/TransactionRow";
 import { formatDateID, formatRupiah } from "../utils/format";
 
-const SORT_OPTIONS = [
-  { key: "date_desc", label: "Terbaru" },
-  { key: "date_asc", label: "Terlama" },
-  { key: "amount_desc", label: "Nominal Tertinggi" },
-  { key: "amount_asc", label: "Nominal Terendah" },
-];
-
 export default function Transactions() {
   const navigate = useNavigate();
   const [filter, setFilter] = useState("all"); // all | income | expense | saving
   const [memberFilter, setMemberFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const [sortBy, setSortBy] = useState("date_desc");
 
   const transactions = useLiveQuery(
     () => db.transactions.orderBy("date").reverse().filter((t) => !t.deleted).toArray(),
@@ -45,16 +38,24 @@ export default function Transactions() {
     return map;
   }, [goals]);
 
+  // Only categories relevant to the current type filter (or all, if "all" selected)
+  const availableCategories = useMemo(() => {
+    if (!categories) return [];
+    if (filter === "all") return categories;
+    return categories.filter((c) => c.type === filter);
+  }, [categories, filter]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (transactions || []).filter((t) => {
       if (filter !== "all" && t.type !== filter) return false;
       if (memberFilter !== "all" && String(t.memberId) !== memberFilter) return false;
+      if (categoryFilter !== "all" && String(t.categoryId) !== categoryFilter) return false;
       if (q) {
         const category = categoryMap[t.categoryId];
         const member = memberMap[t.memberId];
         const goal = goalMap[t.goalId];
-        const haystack = [t.note, category?.name, member?.name, goal?.name, formatRupiah(t.amount)]
+        const haystack = [t.description, t.notes, category?.name, member?.name, goal?.name, formatRupiah(t.amount)]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -62,42 +63,24 @@ export default function Transactions() {
       }
       return true;
     });
-  }, [transactions, filter, memberFilter, search, categoryMap, memberMap, goalMap]);
-
-  const sorted = useMemo(() => {
-    const arr = [...filtered];
-    switch (sortBy) {
-      case "date_asc":
-        arr.sort((a, b) => a.date - b.date);
-        break;
-      case "amount_desc":
-        arr.sort((a, b) => b.amount - a.amount);
-        break;
-      case "amount_asc":
-        arr.sort((a, b) => a.amount - b.amount);
-        break;
-      case "date_desc":
-      default:
-        arr.sort((a, b) => b.date - a.date);
-        break;
-    }
-    return arr;
-  }, [filtered, sortBy]);
-
-  const isAmountSort = sortBy === "amount_desc" || sortBy === "amount_asc";
+  }, [transactions, filter, memberFilter, categoryFilter, search, categoryMap, memberMap, goalMap]);
 
   const grouped = useMemo(() => {
-    if (isAmountSort) return null;
     const groups = {};
-    sorted.forEach((t) => {
+    filtered.forEach((t) => {
       const key = formatDateID(t.date);
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
     });
     return groups;
-  }, [sorted, isAmountSort]);
+  }, [filtered]);
 
   const loading = transactions === undefined;
+
+  function handleTypeFilter(key) {
+    setFilter(key);
+    setCategoryFilter("all"); // reset category filter when type changes, since options differ
+  }
 
   return (
     <div className="min-h-screen bg-surface pb-24">
@@ -110,7 +93,7 @@ export default function Transactions() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Cari catatan, kategori, atau anggota..."
+            placeholder="Cari deskripsi, catatan, kategori..."
             className="min-w-0 flex-1 bg-transparent text-sm text-on-surface outline-none placeholder:text-on-surface-variant/70"
           />
           {search && (
@@ -124,87 +107,84 @@ export default function Transactions() {
           )}
         </div>
 
-        {/* Filter chips + sort */}
-        <div className="mt-3 flex items-center gap-2">
-          <div className="flex flex-1 gap-2 overflow-x-auto pb-1">
-            {[
-              { key: "all", label: "Semua" },
-              { key: "expense", label: "Pengeluaran" },
-              { key: "income", label: "Pemasukan" },
-              { key: "saving", label: "Tabungan" },
-            ].map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
-                  filter === f.key
-                    ? "border-primary bg-primary text-on-primary"
-                    : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-            {members && members.length > 1 && (
-              <select
-                value={memberFilter}
-                onChange={(e) => setMemberFilter(e.target.value)}
-                className="shrink-0 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface-variant"
-              >
-                <option value="all">Semua Anggota</option>
-                {members.map((m) => (
-                  <option key={m.id} value={String(m.id)}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-        </div>
-
-        {/* Sort control */}
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-xs text-on-surface-variant">
-            {sorted.length} transaksi
-          </span>
-          <label className="flex shrink-0 items-center gap-1.5 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface-variant">
-            <ArrowUpDown className="h-3.5 w-3.5" strokeWidth={2} />
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-transparent text-xs font-medium text-on-surface-variant outline-none"
+        {/* Type filter chips */}
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          {[
+            { key: "all", label: "Semua" },
+            { key: "expense", label: "Pengeluaran" },
+            { key: "income", label: "Pemasukan" },
+            { key: "saving", label: "Tabungan" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => handleTypeFilter(f.key)}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
+                filter === f.key
+                  ? "border-primary bg-primary text-on-primary"
+                  : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"
+              }`}
             >
-              {SORT_OPTIONS.map((s) => (
-                <option key={s.key} value={s.key}>
-                  {s.label}
+              {f.label}
+            </button>
+          ))}
+          {members && members.length > 1 && (
+            <select
+              value={memberFilter}
+              onChange={(e) => setMemberFilter(e.target.value)}
+              className="shrink-0 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface-variant"
+            >
+              <option value="all">Semua Anggota</option>
+              {members.map((m) => (
+                <option key={m.id} value={String(m.id)}>
+                  {m.name}
                 </option>
               ))}
             </select>
-          </label>
+          )}
         </div>
 
-        <div className="mt-4 space-y-5">
+        {/* Category filter chips */}
+        {availableCategories.length > 0 && filter !== "saving" && (
+          <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+            <button
+              onClick={() => setCategoryFilter("all")}
+              className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
+                categoryFilter === "all"
+                  ? "border-secondary bg-secondary text-on-secondary"
+                  : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"
+              }`}
+            >
+              Semua Kategori
+            </button>
+            {availableCategories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setCategoryFilter(String(cat.id))}
+                className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
+                  categoryFilter === String(cat.id)
+                    ? "border-secondary bg-secondary text-on-secondary"
+                    : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"
+                }`}
+              >
+                {cat.name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-3 flex items-center justify-between px-0.5">
+          <span className="text-xs text-on-surface-variant">{filtered.length} transaksi</span>
+        </div>
+
+        <div className="mt-2 space-y-5">
           {loading ? (
             <div className="h-64 animate-pulse rounded-xl bg-surface-container-high" />
-          ) : sorted.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <p className="rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 text-center text-sm text-on-surface-variant">
               {search
                 ? "Tidak ada transaksi yang cocok dengan pencarian."
                 : "Tidak ada transaksi untuk filter ini."}
             </p>
-          ) : isAmountSort ? (
-            <div className="overflow-hidden rounded-xl border border-outline-variant shadow-card">
-              {sorted.map((tx) => (
-                <TransactionRow
-                  key={tx.id}
-                  tx={tx}
-                  category={categoryMap[tx.categoryId]}
-                  member={memberMap[tx.memberId]}
-                  goal={goalMap[tx.goalId]}
-                  onClick={() => navigate(`/tambah?edit=${tx.id}`)}
-                />
-              ))}
-            </div>
           ) : (
             Object.entries(grouped).map(([dateLabel, txs]) => {
               const dayTotal = txs.reduce((s, t) => {
