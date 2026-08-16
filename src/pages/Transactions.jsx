@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Search, X, Calendar } from "lucide-react";
-import { db } from "../db/db";
+import { Search, X, Calendar, Undo2 } from "lucide-react";
+import { db, softDelete } from "../db/db";
 import Header from "../components/Header";
 import TransactionRow from "../components/TransactionRow";
 import { formatDateID, formatRupiah } from "../utils/format";
@@ -39,6 +39,9 @@ export default function Transactions() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [openRowId, setOpenRowId] = useState(null); // id of the row currently swiped open
+  const [undoTx, setUndoTx] = useState(null); // last-deleted transaction, kept for the Undo snackbar
+  const undoTimer = useRef(null);
 
   const transactions = useLiveQuery(
     () => db.transactions.orderBy("date").reverse().filter((t) => !t.deleted).toArray(),
@@ -121,6 +124,24 @@ export default function Transactions() {
   function handleTypeFilter(key) {
     setFilter(key);
     setCategoryFilter("all"); // reset category filter when type changes, since options differ
+  }
+
+  useEffect(() => {
+    return () => clearTimeout(undoTimer.current);
+  }, []);
+
+  async function handleDeleteTx(tx) {
+    await softDelete("transactions", tx.id);
+    setUndoTx(tx);
+    clearTimeout(undoTimer.current);
+    undoTimer.current = setTimeout(() => setUndoTx(null), 5000);
+  }
+
+  async function handleUndoDelete() {
+    if (!undoTx) return;
+    clearTimeout(undoTimer.current);
+    await db.transactions.update(undoTx.id, { deleted: 0, updatedAt: Date.now() });
+    setUndoTx(null);
   }
 
   return (
@@ -312,6 +333,9 @@ export default function Transactions() {
                         member={memberMap[tx.memberId]}
                         goal={goalMap[tx.goalId]}
                         onClick={() => navigate(`/tambah?edit=${tx.id}`)}
+                        onDelete={handleDeleteTx}
+                        isOpen={openRowId === tx.id}
+                        onOpenChange={setOpenRowId}
                       />
                     ))}
                   </div>
@@ -321,6 +345,21 @@ export default function Transactions() {
           )}
         </div>
       </main>
+
+      {undoTx && (
+        <div className="fixed inset-x-0 bottom-20 z-50 flex justify-center px-4">
+          <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-xl bg-on-surface px-4 py-3 text-surface shadow-card">
+            <span className="text-sm">Transaksi dihapus.</span>
+            <button
+              onClick={handleUndoDelete}
+              className="flex shrink-0 items-center gap-1.5 text-sm font-semibold text-primary"
+            >
+              <Undo2 className="h-4 w-4" strokeWidth={2} />
+              Undo
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
