@@ -1,11 +1,33 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Search, X } from "lucide-react";
+import { Search, X, Calendar } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import TransactionRow from "../components/TransactionRow";
 import { formatDateID, formatRupiah } from "../utils/format";
+
+const DATE_PRESETS = [
+  { key: "all", label: "Semua Tanggal" },
+  { key: "this_month", label: "Bulan Ini" },
+  { key: "last_month", label: "Bulan Lalu" },
+  { key: "custom", label: "Custom" },
+];
+
+function getRangeForPreset(preset) {
+  const now = new Date();
+  if (preset === "this_month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - 1;
+    return { start, end };
+  }
+  if (preset === "last_month") {
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+    const end = new Date(now.getFullYear(), now.getMonth(), 1).getTime() - 1;
+    return { start, end };
+  }
+  return null;
+}
 
 export default function Transactions() {
   const navigate = useNavigate();
@@ -13,6 +35,10 @@ export default function Transactions() {
   const [memberFilter, setMemberFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [datePreset, setDatePreset] = useState("all"); // all | this_month | last_month | custom
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const transactions = useLiveQuery(
     () => db.transactions.orderBy("date").reverse().filter((t) => !t.deleted).toArray(),
@@ -45,12 +71,27 @@ export default function Transactions() {
     return categories.filter((c) => c.type === filter);
   }, [categories, filter]);
 
+  const activeRange = useMemo(() => {
+    if (datePreset === "all") return null;
+    if (datePreset === "custom") {
+      const start = customFrom ? new Date(customFrom).setHours(0, 0, 0, 0) : null;
+      const end = customTo ? new Date(customTo).setHours(23, 59, 59, 999) : null;
+      if (!start && !end) return null;
+      return { start, end };
+    }
+    return getRangeForPreset(datePreset);
+  }, [datePreset, customFrom, customTo]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (transactions || []).filter((t) => {
       if (filter !== "all" && t.type !== filter) return false;
       if (memberFilter !== "all" && String(t.memberId) !== memberFilter) return false;
       if (categoryFilter !== "all" && String(t.categoryId) !== categoryFilter) return false;
+      if (activeRange) {
+        if (activeRange.start && t.date < activeRange.start) return false;
+        if (activeRange.end && t.date > activeRange.end) return false;
+      }
       if (q) {
         const category = categoryMap[t.categoryId];
         const member = memberMap[t.memberId];
@@ -63,7 +104,7 @@ export default function Transactions() {
       }
       return true;
     });
-  }, [transactions, filter, memberFilter, categoryFilter, search, categoryMap, memberMap, goalMap]);
+  }, [transactions, filter, memberFilter, categoryFilter, activeRange, search, categoryMap, memberMap, goalMap]);
 
   const grouped = useMemo(() => {
     const groups = {};
@@ -172,6 +213,63 @@ export default function Transactions() {
           </div>
         )}
 
+        {/* Date range filter */}
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => {
+                setDatePreset(p.key);
+                setShowDatePicker(p.key === "custom");
+              }}
+              className={`flex shrink-0 items-center gap-1 rounded-full border px-3.5 py-1.5 text-xs font-medium ${
+                datePreset === p.key
+                  ? "border-primary bg-primary text-on-primary"
+                  : "border-outline-variant bg-surface-container-lowest text-on-surface-variant"
+              }`}
+            >
+              {p.key === "custom" && <Calendar className="h-3.5 w-3.5" strokeWidth={2} />}
+              {p.key === "custom" && customFrom && customTo
+                ? `${customFrom.slice(5)} – ${customTo.slice(5)}`
+                : p.label}
+            </button>
+          ))}
+        </div>
+
+        {showDatePicker && (
+          <div className="mt-2 flex items-center gap-2 rounded-xl border border-outline-variant bg-surface-container-lowest p-3">
+            <div className="flex-1">
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">
+                Dari
+              </label>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-2 text-xs text-on-surface outline-none focus:border-primary"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">
+                Sampai
+              </label>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="w-full rounded-lg border border-outline-variant bg-surface px-2.5 py-2 text-xs text-on-surface outline-none focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => setShowDatePicker(false)}
+              className="mt-4 shrink-0 rounded-lg p-2 text-on-surface-variant hover:bg-surface-container-high"
+              aria-label="Tutup"
+            >
+              <X className="h-4 w-4" strokeWidth={2} />
+            </button>
+          </div>
+        )}
+
         <div className="mt-3 flex items-center justify-between px-0.5">
           <span className="text-xs text-on-surface-variant">{filtered.length} transaksi</span>
         </div>
@@ -183,6 +281,8 @@ export default function Transactions() {
             <p className="rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-6 text-center text-sm text-on-surface-variant">
               {search
                 ? "Tidak ada transaksi yang cocok dengan pencarian."
+                : activeRange
+                ? "Tidak ada transaksi pada rentang tanggal ini."
                 : "Tidak ada transaksi untuk filter ini."}
             </p>
           ) : (
