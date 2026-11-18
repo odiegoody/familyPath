@@ -1,13 +1,14 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutGrid, Receipt, Grid3x3, Plus } from "lucide-react";
+import { LayoutGrid, Receipt, BarChart2, Grid3x3, Plus } from "lucide-react";
 
 const items = [
   { to: "/", label: "Dashboard", icon: LayoutGrid },
   { to: "/transaksi", label: "Transaksi", icon: Receipt },
+  { to: "/laporan", label: "Laporan", icon: BarChart2 },
   { to: "/lainnya", label: "Lainnya", icon: Grid3x3 },
 ];
 
-const LAINNYA_PREFIXES = ["/lainnya", "/budget", "/goals", "/aset", "/investasi", "/hutang", "/anggota", "/kategori"];
+const LAINNYA_PREFIXES = ["/lainnya", "/budget", "/goals", "/aset", "/investasi", "/hutang", "/anggota", "/kategori", "/laporan"];
 
 export default function BottomNav() {
   const location = useLocation();

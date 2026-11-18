@@ -24,6 +24,7 @@ import AddInvestment from "./pages/AddInvestment";
 import InvestmentDetail from "./pages/InvestmentDetail";
 import InvestmentTarget from "./pages/InvestmentTarget";
 import Backup from "./pages/Backup";
+import Analytics from "./pages/Analytics";
 
 function Layout() {
   const location = useLocation();
@@ -65,6 +66,7 @@ function Layout() {
         <Route path="/investasi/:id" element={<InvestmentDetail />} />
         <Route path="/investasi/:id/edit" element={<AddInvestment />} />
         <Route path="/backup" element={<Backup />} />
+        <Route path="/laporan" element={<Analytics />} />
         <Route path="/tambah" element={<AddTransaction />} />
       </Routes>
       {!hideNav && <BottomNav />}
