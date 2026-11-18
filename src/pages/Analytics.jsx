@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db/db";
-import { ChevronLeft, ChevronRight, BarChart2, TrendingUp, Download, Calendar, Filter, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, BarChart2, TrendingUp, Download, Calendar, Filter, X, Grid } from "lucide-react";
 import Header from "../components/Header";
 import { formatRupiah, monthKey, monthKeyToLabel, shiftMonthKey, formatDateID } from "../utils/format";
-import { getCategoryMonthlyBreakdown, getMonthlySummary, getCategoryComparison, getTopCategories } from "../utils/analytics";
+import { getCategoryMonthlyBreakdown, getMonthlySummary, getCategoryComparison, getTopCategories, getDailySpending, exportMonthlySummaryToCSV, exportCategoryTrendToCSV, exportMonthlyComparisonToCSV, downloadCSV } from "../utils/analytics";
 import MiniChart from "../components/MiniChart";
 import { getIcon } from "../utils/icons";
 
@@ -17,11 +17,13 @@ const MONTH_OPTIONS = [
 
 export default function Analytics() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState("overview"); // overview | category | monthly
+  const [tab, setTab] = useState("overview"); // overview | category | monthly | heatmap
   const [monthsRange, setMonthsRange] = useState(6);
   const [selectedCategoryId, setSelectedCategoryId] = useState(null);
   const [selectedMonthKey, setSelectedMonthKey] = useState(monthKey());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
 
   const categories = useLiveQuery(
     () => db.categories.where("type").equals("expense").and(c => !c.deleted).toArray(),
@@ -43,6 +45,11 @@ export default function Analytics() {
   const categoryComparison = useLiveQuery(async () => {
     return await getCategoryComparison(selectedMonthKey);
   }, [selectedMonthKey]);
+
+  // Data for heatmap
+  const dailySpending = useLiveQuery(async () => {
+    return await getDailySpending(monthsRange);
+  }, [monthsRange]);
 
   // Top categories for quick selection
   const topCategories = useLiveQuery(async () => {
@@ -103,6 +110,61 @@ export default function Analytics() {
       incomeChange,
     };
   }, [monthlySummary]);
+
+  // Heatmap data processing
+  const heatmapData = useMemo(() => {
+    if (!dailySpending) return { cells: [], max: 0, months: [] };
+    const values = Object.values(dailySpending);
+    const max = values.length ? Math.max(...values) : 0;
+
+    // Group by month
+    const months = [];
+    const now = new Date();
+    for (let i = monthsRange - 1; i >= 0; i--) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+        label: date.toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }),
+        startDay: new Date(date.getFullYear(), date.getMonth(), 1).getDay(),
+        daysInMonth: new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate(),
+      });
+    }
+
+    return { dailySpending, max, months };
+  }, [dailySpending, monthsRange]);
+
+  // Export handlers
+  const handleExportOverview = () => {
+    if (!monthlySummary || !categories) return;
+    const csv = exportMonthlySummaryToCSV(monthlySummary, categories);
+    downloadCSV(csv, `laporan-ringkasan-${monthKey()}.csv`);
+    setShowExportMenu(false);
+  };
+
+  const handleExportCategory = () => {
+    if (!categoryTrend || !selectedCategory) return;
+    const csv = exportCategoryTrendToCSV(categoryTrend, selectedCategory.name);
+    downloadCSV(csv, `laporan-kategori-${selectedCategory.name}-${monthKey()}.csv`);
+    setShowExportMenu(false);
+  };
+
+  const handleExportMonthly = () => {
+    if (!categoryComparison) return;
+    const csv = exportMonthlyComparisonToCSV(categoryComparison, selectedMonthLabel);
+    downloadCSV(csv, `laporan-bulanan-${selectedMonthKey}.csv`);
+    setShowExportMenu(false);
+  };
+
+  const handleExportHeatmap = () => {
+    if (!dailySpending) return;
+    const headers = ["Tanggal", "Pengeluaran"];
+    const rows = Object.entries(dailySpending)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, amount]) => [date, amount]);
+    const csv = [`Heatmap Harian (${monthsRange} bulan)`, "", headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    downloadCSV(csv, `heatmap-harian-${monthKey()}.csv`);
+    setShowExportMenu(false);
+  };
 
   function renderOverviewTab() {
     if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-container-high" />)}</div>;
@@ -434,16 +496,150 @@ export default function Analytics() {
     );
   }
 
+  function renderHeatmapTab() {
+    if (!dailySpending) return <div className="h-64 flex items-center justify-center text-on-surface-variant">Memuat...</div>;
+
+    const { cells, max, months } = heatmapData;
+    if (max === 0) {
+      return (
+        <div className="rounded-xl border border-dashed border-outline-variant bg-surface-container-lowest p-8 text-center">
+          <p className="text-on-surface-variant">Belum ada data pengeluaran untuk periode ini.</p>
+        </div>
+      );
+    }
+
+    // Color scale: light to dark
+    const getColor = (value) => {
+      if (!value) return "var(--surface-container-high)";
+      const intensity = value / max;
+      // Green scale
+      const r = Math.round(47 * (1 - intensity) + 0 * intensity);
+      const g = Math.round(143 * (1 - intensity) + 100 * intensity);
+      const b = Math.round(78 * (1 - intensity) + 0 * intensity);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Legend */}
+        <div className="flex items-center justify-between text-xs text-on-surface-variant">
+          <span>Kurang</span>
+          <div className="flex items-center gap-1">
+            {[0, 0.25, 0.5, 0.75, 1].map((v, i) => (
+              <span
+                key={i}
+                className="h-3 w-3 rounded-sm"
+                style={{ backgroundColor: getColor(v * max) }}
+              />
+            ))}
+          </div>
+          <span>Lebih</span>
+        </div>
+
+        {/* Calendar grids */}
+        <div className="space-y-4">
+          {months.map((month, mi) => (
+            <div key={month.key} className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-card">
+              <h4 className="mb-3 font-medium text-on-surface">{month.label}</h4>
+              <div className="grid grid-cols-7 gap-0.5 text-[10px] text-center text-on-surface-variant">
+                {["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"].map(d => (
+                  <div key={d} className="py-1 font-medium">{d}</div>
+                ))}
+              </div>
+              <div className="mt-1 grid grid-cols-7 gap-0.5">
+                {/* Empty cells before month start */}
+                {Array.from({ length: month.startDay }, (_, i) => (
+                  <div key={`empty-${mi}-${i}`} className="aspect-square" />
+                ))}
+                {/* Days of month */}
+                {Array.from({ length: month.daysInMonth }, (_, d) => {
+                  const day = d + 1;
+                  const date = new Date(month.key.split("-")[0], month.key.split("-")[1] - 1, day);
+                  const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const value = dailySpending[key] || 0;
+                  const isToday = date.toDateString() === new Date().toDateString();
+                  return (
+                    <div
+                      key={`${mi}-${day}`}
+                      className="aspect-square rounded-sm flex items-center justify-center text-[11px] font-medium transition-colors"
+                      style={{
+                        backgroundColor: getColor(value),
+                        color: value > max * 0.5 ? "white" : "var(--on-surface)",
+                        border: isToday ? "2px solid var(--primary)" : "none",
+                      }}
+                      title={`${key}: ${value ? formatRupiah(value) : "Rp 0"}`}
+                    >
+                      {day}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-surface pb-24">
       <Header title="Laporan" showBack />
       <main className="mx-auto max-w-md space-y-6 px-4 pt-4">
+        {/* Header with export button */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-on-surface-variant">Periode:</span>
+            <select
+              value={monthsRange}
+              onChange={e => setMonthsRange(Number(e.target.value))}
+              className="rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface"
+            >
+              {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </div>
+          {/* Export dropdown */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu(!showExportMenu)}
+              className="flex items-center gap-1.5 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface-variant"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={2} />
+              Export
+            </button>
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-1 shadow-card min-w-[160px] z-10">
+                {tab === "overview" && (
+                  <button onClick={handleExportOverview} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
+                    Export Ringkasan (CSV)
+                  </button>
+                )}
+                {tab === "category" && (
+                  <button onClick={handleExportCategory} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
+                    Export Kategori (CSV)
+                  </button>
+                )}
+                {tab === "monthly" && (
+                  <button onClick={handleExportMonthly} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
+                    Export Bulan Ini (CSV)
+                  </button>
+                )}
+                {tab === "heatmap" && (
+                  <button onClick={handleExportHeatmap} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
+                    Export Heatmap (CSV)
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Tab bar */}
         <div className="flex gap-1 rounded-full border border-outline-variant bg-surface-container-lowest p-1">
           {[
             { key: "overview", label: "Ringkasan", icon: BarChart2 },
             { key: "category", label: "Per Kategori", icon: TrendingUp },
             { key: "monthly", label: "Per Bulan", icon: Calendar },
+            { key: "heatmap", label: "Heatmap", icon: Grid },
           ].map(t => (
             <button
               key={t.key}
@@ -463,6 +659,7 @@ export default function Analytics() {
         {tab === "overview" && renderOverviewTab()}
         {tab === "category" && renderCategoryTab()}
         {tab === "monthly" && renderMonthlyTab()}
+        {tab === "heatmap" && renderHeatmapTab()}
       </main>
     </div>
   );

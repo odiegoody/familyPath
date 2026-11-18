@@ -150,3 +150,103 @@ export async function getTopCategories(months = 6, limit = 5) {
     .sort((a, b) => b.spent - a.spent)
     .slice(0, limit);
 }
+
+/**
+ * Get daily spending data for calendar heatmap
+ */
+export async function getDailySpending(months = 12) {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - months + 1, 1).getTime();
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - 1;
+
+  const txs = await db.transactions
+    .where("date").between(from, to, true, true)
+    .and(t => t.type === "expense" && !t.deleted)
+    .toArray();
+
+  const dailyMap = {};
+  for (const t of txs) {
+    const date = new Date(t.date);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    dailyMap[key] = (dailyMap[key] || 0) + t.amount;
+  }
+
+  return dailyMap;
+}
+
+/**
+ * Export monthly summary to CSV
+ */
+export function exportMonthlySummaryToCSV(monthlySummary, categories) {
+  const categoryMap = {};
+  categories.forEach(c => categoryMap[c.id] = c.name);
+
+  const headers = ["Bulan", "Total Pengeluaran", "Total Pemasukan", "Tabungan Keluar", "Tabungan Masuk", "Net", "Jumlah Transaksi"];
+  const categoryHeaders = Object.values(categoryMap);
+  const allHeaders = [...headers, ...categoryHeaders];
+
+  const rows = monthlySummary.map(m => {
+    const row = [
+      m.monthLabel,
+      m.totalExpense,
+      m.totalIncome,
+      m.totalSavingOut,
+      m.totalSavingIn,
+      m.net,
+      m.count,
+    ];
+    categoryHeaders.forEach(catName => {
+      const catId = Object.keys(categoryMap).find(id => categoryMap[id] === catName);
+      row.push(m.byCategory[catId] || 0);
+    });
+    return row;
+  });
+
+  const csv = [allHeaders.join(","), ...rows.map(r => r.join(","))].join("\n");
+  return csv;
+}
+
+/**
+ * Export category trend to CSV
+ */
+export function exportCategoryTrendToCSV(categoryTrend, categoryName) {
+  const headers = ["Bulan", "Pengeluaran", "Pemasukan", "Tabungan Keluar", "Tabungan Masuk", "Net", "Jumlah Transaksi"];
+  const rows = categoryTrend.map(c => [
+    c.monthLabel,
+    c.expense,
+    c.income,
+    c.savingOut,
+    c.savingIn,
+    c.net,
+    c.count,
+  ]);
+
+  const csv = [`Laporan Kategori: ${categoryName}`, "", headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+  return csv;
+}
+
+/**
+ * Export monthly category comparison to CSV
+ */
+export function exportMonthlyComparisonToCSV(categoryComparison, monthLabel) {
+  const headers = ["Kategori", "Jumlah", "Persentase"];
+  const total = categoryComparison.reduce((s, c) => s + c.spent, 0);
+  const rows = categoryComparison
+    .filter(c => c.spent > 0)
+    .map(c => [c.name, c.spent, total ? ((c.spent / total) * 100).toFixed(1) + "%" : "0%"]);
+
+  const csv = [`Laporan Bulanan: ${monthLabel}`, "", headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+  return csv;
+}
+
+/**
+ * Trigger download of CSV file
+ */
+export function downloadCSV(csv, filename) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
