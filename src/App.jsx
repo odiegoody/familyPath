@@ -25,6 +25,9 @@ import InvestmentDetail from "./pages/InvestmentDetail";
 import InvestmentTarget from "./pages/InvestmentTarget";
 import Backup from "./pages/Backup";
 import Analytics from "./pages/Analytics";
+import { db } from "./db/db";
+import { initNotifications } from "./utils/notifications";
+import * as analytics from "./utils/analytics";
 
 function Layout() {
   const location = useLocation();
@@ -78,7 +81,11 @@ export default function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    seedIfEmpty().then(() => setReady(true));
+    seedIfEmpty().then(() => {
+      setReady(true);
+      // Initialize notifications after DB is ready
+      initNotifications(db, analytics);
+    });
   }, []);
 
   if (!ready) {

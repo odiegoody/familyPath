@@ -15,6 +15,63 @@
   }
 }
 
+/* Global text overflow fixes */
+@layer utilities {
+  /* Prevent flex/grid children from overflowing */
+  .flex-min-0 > *,
+  .grid-min-0 > * {
+    min-width: 0;
+  }
+
+  /* Table layout fixes */
+  .table-fixed {
+    table-layout: fixed;
+    width: 100%;
+  }
+  .table-fixed td,
+  .table-fixed th {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Better truncate for flex children */
+  .truncate-flex {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Prevent text from breaking layout */
+  .text-safe {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+/* Improved scrollbar */
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.outline-variant') transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: theme('colors.outline-variant');
+    border-radius: 3px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: theme('colors.on-surface-variant');
+  }
+}
+
 @keyframes slideDown {
   from {
     opacity: 0;

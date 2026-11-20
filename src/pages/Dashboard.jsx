@@ -32,7 +32,7 @@ export default function Dashboard() {
   const [healthScore, setHealthScore] = useState(null);
 
   useEffect(() => {
-    calculateDailySafeSpend().then(setSafeSpend);
+    calculateDailySafeSpend({ useCategoryFilter: true, categories }).then(setSafeSpend);
     calculateBudgetHealthScore().then(setHealthScore);
   }, [transactions?.length, categories?.length]);
 

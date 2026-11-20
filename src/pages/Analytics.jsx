@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, BarChart2, TrendingUp, Download, Calendar, F
 import Header from "../components/Header";
 import { formatRupiah, monthKey, monthKeyToLabel, shiftMonthKey, formatDateID } from "../utils/format";
 import { getCategoryMonthlyBreakdown, getMonthlySummary, getCategoryComparison, getTopCategories, getDailySpending, exportMonthlySummaryToCSV, exportCategoryTrendToCSV, exportMonthlyComparisonToCSV, downloadCSV } from "../utils/analytics";
+import { exportReportToPDF, quickExportPDF, detailedExportPDF } from "../utils/pdfExport";
 import MiniChart from "../components/MiniChart";
 import { getIcon } from "../utils/icons";
 
@@ -23,6 +24,7 @@ export default function Analytics() {
   const [selectedMonthKey, setSelectedMonthKey] = useState(monthKey());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showPdfExportModal, setShowPdfExportModal] = useState(false);
   const exportMenuRef = useRef(null);
 
   const categories = useLiveQuery(
@@ -166,6 +168,40 @@ export default function Analytics() {
     setShowExportMenu(false);
   };
 
+  // PDF Export handlers
+  const handleQuickPdfExport = async () => {
+    try {
+      await quickExportPDF(db);
+      setShowExportMenu(false);
+      setShowPdfExportModal(false);
+    } catch (e) {
+      console.error("PDF export failed:", e);
+    }
+  };
+
+  const handleDetailedPdfExport = async () => {
+    try {
+      await detailedExportPDF(db);
+      setShowExportMenu(false);
+      setShowPdfExportModal(false);
+    } catch (e) {
+      console.error("PDF export failed:", e);
+    }
+  };
+
+  const handleCustomPdfExport = async (options) => {
+    try {
+      await exportReportToPDF(db, {
+        ...options,
+        monthKey: selectedMonthKey,
+      });
+      setShowExportMenu(false);
+      setShowPdfExportModal(false);
+    } catch (e) {
+      console.error("PDF export failed:", e);
+    }
+  };
+
   function renderOverviewTab() {
     if (loading) return <div className="space-y-4">{[1,2,3].map(i => <div key={i} className="h-24 animate-pulse rounded-xl bg-surface-container-high" />)}</div>;
 
@@ -241,7 +277,7 @@ export default function Analytics() {
           <h3 className="mb-3 font-display text-sm font-semibold text-on-surface">Detail Per Bulan</h3>
           <div className="rounded-xl border border-outline-variant bg-surface-container-lowest overflow-hidden shadow-card">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="table-fixed w-full text-sm">
                 <thead>
                   <tr className="bg-surface-container-high text-on-surface-variant">
                     <th className="px-4 py-2.5 text-left font-medium">Bulan</th>
@@ -600,34 +636,151 @@ export default function Analytics() {
           {/* Export dropdown */}
           <div className="relative" ref={exportMenuRef}>
             <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
+              onClick={() => { setShowExportMenu(false); setShowPdfExportModal(true); }}
               className="flex items-center gap-1.5 rounded-full border border-outline-variant bg-surface-container-lowest px-3 py-1.5 text-xs font-medium text-on-surface-variant"
             >
               <Download className="h-3.5 w-3.5" strokeWidth={2} />
               Export
             </button>
-            {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1 rounded-xl border border-outline-variant bg-surface-container-lowest p-1 shadow-card min-w-[160px] z-10">
-                {tab === "overview" && (
-                  <button onClick={handleExportOverview} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
-                    Export Ringkasan (CSV)
-                  </button>
-                )}
-                {tab === "category" && (
-                  <button onClick={handleExportCategory} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
-                    Export Kategori (CSV)
-                  </button>
-                )}
-                {tab === "monthly" && (
-                  <button onClick={handleExportMonthly} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
-                    Export Bulan Ini (CSV)
-                  </button>
-                )}
-                {tab === "heatmap" && (
-                  <button onClick={handleExportHeatmap} className="w-full px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container-high rounded-lg">
-                    Export Heatmap (CSV)
-                  </button>
-                )}
+            {/* PDF Export Modal */}
+            {showPdfExportModal && (
+              <div className="fixed inset-0 z-50 flex flex-col bg-black/30 backdrop-blur-sm" onClick={() => setShowPdfExportModal(false)}>
+                <div className="flex-1 flex items-end">
+                  <div className="w-full rounded-t-2xl bg-surface shadow-xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-center pt-3">
+                      <div className="h-1 w-10 rounded-full bg-outline-variant" />
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+                      <h3 className="font-display text-lg font-semibold text-on-surface">Export PDF Laporan</h3>
+                      <button onClick={() => setShowPdfExportModal(false)} className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-high" aria-label="Tutup">
+                        <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                      {/* Quick options */}
+                      <div>
+                        <h4 className="mb-3 text-sm font-semibold text-on-surface-variant uppercase tracking-wide">Opsi Cepat</h4>
+                        <button
+                          onClick={handleQuickPdfExport}
+                          className="w-full flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-card text-left"
+                        >
+                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-on-surface">Export Cepat (Ringkasan)</p>
+                            <p className="text-xs text-on-surface-variant">Ringkasan + breakdown kategori + tren 6 bulan (tanpa detail transaksi)</p>
+                          </div>
+                          <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                        <button
+                          onClick={handleDetailedPdfExport}
+                          className="w-full flex items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-card text-left"
+                        >
+                          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-secondary/10 text-secondary">
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-on-surface">Export Detail (Lengkap)</p>
+                            <p className="text-xs text-on-surface-variant">Semua data + detail transaksi hingga 200 item</p>
+                          </div>
+                          <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        </button>
+                      </div>
+
+                      {/* Custom options */}
+                      <div className="pt-4 border-t border-outline-variant">
+                        <h4 className="mb-3 text-sm font-semibold text-on-surface-variant uppercase tracking-wide">Export Custom</h4>
+                        <div className="space-y-3">
+                          <label className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              defaultChecked={true}
+                              className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-2 focus:ring-primary/20"
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-on-surface">Breakdown per Kategori</p>
+                              <p className="text-xs text-on-surface-variant">Tabel pengeluaran per kategori dengan persentase</p>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              defaultChecked={true}
+                              className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-2 focus:ring-primary/20"
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-on-surface">Tren Bulanan (6 bulan)</p>
+                              <p className="text-xs text-on-surface-variant">Grafik pengeluaran vs pemasukan per bulan</p>
+                            </div>
+                          </label>
+                          <label className="flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              defaultChecked={false}
+                              className="h-4 w-4 rounded border-outline-variant text-primary focus:ring-2 focus:ring-primary/20"
+                            />
+                            <div className="flex-1">
+                              <p className="font-medium text-on-surface">Detail Transaksi</p>
+                              <p className="text-xs text-on-surface-variant">Daftar semua transaksi (maks 200 item)</p>
+                            </div>
+                          </label>
+                        </div>
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            onClick={() => {
+                              handleCustomPdfExport({
+                                includeCategoryBreakdown: true,
+                                includeMonthlyTrend: true,
+                                includeTransactions: false,
+                              });
+                            }}
+                            className="flex-1 rounded-lg bg-primary py-3 text-center text-sm font-semibold text-on-primary"
+                          >
+                            Export Custom
+                          </button>
+                          <button
+                            onClick={() => setShowPdfExportModal(false)}
+                            className="flex-1 rounded-lg border border-outline-variant py-3 text-center text-sm font-semibold text-on-surface"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* CSV options */}
+                      <div className="pt-4 border-t border-outline-variant">
+                        <h4 className="mb-3 text-sm font-semibold text-on-surface-variant uppercase tracking-wide">Export CSV</h4>
+                        <div className="space-y-2">
+                          {tab === "overview" && (
+                            <button onClick={handleExportOverview} className="w-full flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-left">
+                              <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <span className="text-on-surface">Export Ringkasan (CSV)</span>
+                            </button>
+                          )}
+                          {tab === "category" && (
+                            <button onClick={handleExportCategory} className="w-full flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-left">
+                              <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <span className="text-on-surface">Export Kategori (CSV)</span>
+                            </button>
+                          )}
+                          {tab === "monthly" && (
+                            <button onClick={handleExportMonthly} className="w-full flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-left">
+                              <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <span className="text-on-surface">Export Bulan Ini (CSV)</span>
+                            </button>
+                          )}
+                          {tab === "heatmap" && (
+                            <button onClick={handleExportHeatmap} className="w-full flex items-center gap-3 rounded-lg border border-outline-variant bg-surface-container-lowest p-3 text-left">
+                              <svg className="h-5 w-5 text-on-surface-variant" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                              <span className="text-on-surface">Export Heatmap (CSV)</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </div>

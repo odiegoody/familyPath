@@ -1,12 +1,19 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag, TrendingUp, DatabaseBackup } from "lucide-react";
+import { ChevronRight, Wallet, Target, Landmark, CreditCard, Users, Tag, TrendingUp, DatabaseBackup, Settings, Target as TargetIcon, Bell, Wifi, Smartphone } from "lucide-react";
 import { db } from "../db/db";
 import Header from "../components/Header";
 import { formatRupiah } from "../utils/format";
+import DailyLimitCategorySettings from "../components/DailyLimitCategorySettings";
+import NotificationSettings from "../components/NotificationSettings";
+import P2PSyncPage from "../components/P2PSyncPage";
 
 export default function More() {
   const navigate = useNavigate();
+  const [showDailyLimitSettings, setShowDailyLimitSettings] = useState(false);
+  const [showNotificationSettings, setShowNotificationSettings] = useState(false);
+  const [showP2PSync, setShowP2PSync] = useState(false);
 
   const budgetCount = useLiveQuery(
     async () => (await db.budgets.toArray()).filter((b) => !b.deleted).length,
@@ -30,6 +37,11 @@ export default function More() {
   );
   const categoryCount = useLiveQuery(
     async () => (await db.categories.toArray()).filter((c) => !c.deleted).length,
+    []
+  );
+
+  const categories = useLiveQuery(
+    () => db.categories.filter((c) => !c.deleted).toArray(),
     []
   );
 
@@ -98,6 +110,30 @@ export default function More() {
       color: "#00b0b9",
       count: null,
     },
+    {
+      key: "daily-limit",
+      label: "Pengaturan Limit Harian",
+      desc: "Pilih kategori yang dihitung untuk limit harian aman (50/30/20)",
+      icon: Settings,
+      color: "#e0a72c",
+      count: null,
+    },
+    {
+      key: "notifications",
+      label: "Pengaturan Notifikasi",
+      desc: "Limit harian, budget, ringkasan bulanan, pengingat harian",
+      icon: Bell,
+      color: "#e0527a",
+      count: null,
+    },
+    {
+      key: "p2p-sync",
+      label: "Sinkronkan Perangkat",
+      desc: "Transfer data antar HP via QR Code + WebRTC (offline)",
+      icon: Wifi,
+      color: "#3b7dd8",
+      count: null,
+    },
   ];
 
   return (
@@ -106,8 +142,18 @@ export default function More() {
       <main className="mx-auto max-w-md space-y-3 px-4 pt-4">
         {items.map((item) => (
           <button
-            key={item.to}
-            onClick={() => navigate(item.to)}
+            key={item.to || item.key}
+            onClick={() => {
+              if (item.key === "daily-limit") {
+                setShowDailyLimitSettings(true);
+              } else if (item.key === "notifications") {
+                setShowNotificationSettings(true);
+              } else if (item.key === "p2p-sync") {
+                setShowP2PSync(true);
+              } else if (item.to) {
+                navigate(item.to);
+              }
+            }}
             className="flex w-full items-center gap-3 rounded-xl border border-outline-variant bg-surface-container-lowest p-4 text-left shadow-card"
           >
             <span
@@ -123,6 +169,75 @@ export default function More() {
             <ChevronRight size={18} className="shrink-0 text-on-surface-variant" />
           </button>
         ))}
+
+        {/* Daily Limit Settings Modal */}
+        {showDailyLimitSettings && categories && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-black/30 backdrop-blur-sm" onClick={() => setShowDailyLimitSettings(false)}>
+            <div className="flex-1 flex items-end">
+              <div className="w-full rounded-t-2xl bg-surface shadow-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-center pt-3">
+                  <div className="h-1 w-10 rounded-full bg-outline-variant" />
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+                  <h3 className="font-display text-lg font-semibold text-on-surface">Pengaturan Limit Harian</h3>
+                  <button onClick={() => setShowDailyLimitSettings(false)} className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-high" aria-label="Tutup">
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <DailyLimitCategorySettings
+                    categories={categories}
+                    onClose={() => setShowDailyLimitSettings(false)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Notification Settings Modal */}
+        {showNotificationSettings && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-black/30 backdrop-blur-sm" onClick={() => setShowNotificationSettings(false)}>
+            <div className="flex-1 flex items-end">
+              <div className="w-full rounded-t-2xl bg-surface shadow-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-center pt-3">
+                  <div className="h-1 w-10 rounded-full bg-outline-variant" />
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+                  <h3 className="font-display text-lg font-semibold text-on-surface">Pengaturan Notifikasi</h3>
+                  <button onClick={() => setShowNotificationSettings(false)} className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-high" aria-label="Tutup">
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <NotificationSettings onClose={() => setShowNotificationSettings(false)} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* P2P Sync Modal */}
+        {showP2PSync && (
+          <div className="fixed inset-0 z-50 flex flex-col bg-black/30 backdrop-blur-sm" onClick={() => setShowP2PSync(false)}>
+            <div className="flex-1 flex items-end">
+              <div className="w-full rounded-t-2xl bg-surface shadow-xl max-h-[95vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-center pt-3">
+                  <div className="h-1 w-10 rounded-full bg-outline-variant" />
+                </div>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+                  <h3 className="font-display text-lg font-semibold text-on-surface">Sinkronkan Perangkat</h3>
+                  <button onClick={() => setShowP2PSync(false)} className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-high" aria-label="Tutup">
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <P2PSyncPage onClose={() => setShowP2PSync(false)} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

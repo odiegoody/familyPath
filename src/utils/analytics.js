@@ -1,4 +1,5 @@
 import { db } from "../db/db";
+import { filterTransactionsForDailyLimit, getDailyLimitCategories } from "./dailyLimitSettings";
 
 /**
  * Get monthly breakdown for a specific category over N months
@@ -254,8 +255,12 @@ export function downloadCSV(csv, filename) {
 /**
  * Calculate daily safe-spend limit (Savvr-style 50/30/20 budgeting)
  * Based on monthly income, fixed expenses, and savings goals
+ * @param {Object} options - Options for calculation
+ * @param {boolean} options.useCategoryFilter - Whether to filter by user-selected categories
+ * @param {Array} options.categories - Categories for filtering (required if useCategoryFilter is true)
  */
-export async function calculateDailySafeSpend() {
+export async function calculateDailySafeSpend(options = {}) {
+  const { useCategoryFilter = true, categories = [] } = options;
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - 1;
@@ -263,17 +268,22 @@ export async function calculateDailySafeSpend() {
   const daysRemaining = daysInMonth - now.getDate() + 1;
 
   // Get current month transactions
-  const txs = await db.transactions
+  const allTxs = await db.transactions
     .where("date").between(monthStart, monthEnd, true, true)
     .and(t => !t.deleted)
     .toArray();
+
+  // Filter transactions based on daily limit category settings
+  const txs = useCategoryFilter && categories.length > 0
+    ? filterTransactionsForDailyLimit(allTxs, categories)
+    : allTxs;
 
   // Calculate monthly income (salary + other income)
   const monthlyIncome = txs
     .filter(t => t.type === "income")
     .reduce((s, t) => s + t.amount, 0);
 
-  // Calculate fixed expenses (already spent this month)
+  // Calculate fixed expenses (already spent this month) - only from enabled categories
   const spentThisMonth = txs
     .filter(t => t.type === "expense")
     .reduce((s, t) => s + t.amount, 0);
@@ -331,6 +341,9 @@ export async function calculateDailySafeSpend() {
     needsUsagePct: needsBudget > 0 ? (allocatedNeeds / needsBudget) * 100 : 0,
     wantsUsagePct: wantsBudget > 0 ? ((wantsBudget - remainingForWants) / wantsBudget) * 100 : 0,
     savingsPct: monthlyIncome > 0 ? (savingsOut / monthlyIncome) * 100 : 0,
+    // Settings info
+    categoryFilterEnabled: useCategoryFilter,
+    activeCategoryCount: getDailyLimitCategories() === "all" ? "all" : getDailyLimitCategories().length,
   };
 }
 
