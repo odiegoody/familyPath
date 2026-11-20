@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { Trash2, PiggyBank } from "lucide-react";
+import { Trash2, PiggyBank, Clipboard, Check, X } from "lucide-react";
 import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import { getIcon } from "../utils/icons";
 import { formatRupiah, parseRupiahInput, todayISO } from "../utils/format";
+import { parseBankNotification, looksLikeBankNotification, suggestCategoryId } from "../utils/clipboardParser";
 
 export default function AddTransaction() {
   const navigate = useNavigate();
@@ -36,6 +37,67 @@ export default function AddTransaction() {
   const [description, setDescription] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [clipboardDetected, setClipboardDetected] = useState(null);
+  const clipboardChecked = useRef(false);
+
+  // Handle Share Target URL params: /tambah?amount=50000&description=Gopay&source=bank-app
+  useEffect(() => {
+    const shareAmount = params.get("amount");
+    const shareDesc = params.get("description");
+    const shareSource = params.get("source");
+    if (shareAmount && shareDesc) {
+      const amount = parseInt(shareAmount, 10);
+      if (amount > 0) {
+        setAmountStr(String(amount));
+        setDescription(shareDesc);
+        setType("expense");
+        if (shareSource) setNotes(`Via share dari: ${shareSource}`);
+      }
+    }
+  }, [params]);
+
+  // Clipboard auto-detect on mount (only for new transactions, not editing)
+  useEffect(() => {
+    if (editId || clipboardChecked.current) return;
+    clipboardChecked.current = true;
+
+    const checkClipboard = async () => {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (looksLikeBankNotification(text)) {
+          const parsed = parseBankNotification(text);
+          if (parsed && parsed.confidence > 0.5) {
+            setClipboardDetected(parsed);
+          }
+        }
+      } catch (e) {
+        // Clipboard API not available or permission denied - silently ignore
+        console.debug("Clipboard read failed:", e);
+      }
+    };
+    checkClipboard();
+  }, [editId]);
+
+  // Apply clipboard detection to form
+  useEffect(() => {
+    if (clipboardDetected && !editId) {
+      setAmountStr(String(clipboardDetected.amount));
+      setDescription(clipboardDetected.description);
+      setType(clipboardDetected.type);
+      setNotes(`Auto-detected dari ${clipboardDetected.bank}: ${clipboardDetected.rawText.slice(0, 100)}`);
+
+      // Suggest category after categories loaded
+      if (categories) {
+        const suggestedCatId = suggestCategoryId(clipboardDetected, categories);
+        if (suggestedCatId) setCategoryId(suggestedCatId);
+      }
+
+      // Default member
+      if (members && members.length && !memberId) {
+        setMemberId(members[0].id);
+      }
+    }
+  }, [clipboardDetected, categories, members, memberId, editId]);
 
   useEffect(() => {
     if (existing) {
@@ -132,6 +194,40 @@ export default function AddTransaction() {
           ) : null
         }
       />
+
+      {/* Clipboard detection banner */}
+      {clipboardDetected && !editId && (
+        <div className="mx-auto max-w-md px-4 pt-2 animate-slide-down">
+          <div className="flex items-start gap-3 rounded-xl bg-primary-container p-3 shadow-card border border-primary/20">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-on-primary">
+              <Clipboard size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-on-primary">Transaksi terdeteksi dari clipboard</p>
+              <p className="mt-1 text-xs text-on-primary/80 font-mono">
+                {clipboardDetected.bank} • {clipboardDetected.type === "income" ? "Pemasukan" : "Pengeluaran"} • {formatRupiah(clipboardDetected.amount)}
+              </p>
+              <p className="mt-1 text-xs text-on-primary/70 truncate">{clipboardDetected.description}</p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setClipboardDetected(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-on-primary/70 hover:bg-primary/20"
+                aria-label="Tolak"
+              >
+                <X size={16} />
+              </button>
+              <button
+                onClick={() => setClipboardDetected(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-on-primary font-semibold"
+                aria-label="Gunakan"
+              >
+                <Check size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto max-w-md space-y-6 px-4 pt-5">
         {/* Type toggle */}
@@ -302,13 +398,39 @@ export default function AddTransaction() {
           <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
             Deskripsi
           </label>
-          <input
-            type="text"
-            placeholder="Untuk apa transaksi ini?"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3 text-sm text-on-surface outline-none placeholder:text-on-surface-variant/60 focus:border-primary"
-          />
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Untuk apa transaksi ini?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3 pr-12 text-sm text-on-surface outline-none placeholder:text-on-surface-variant/60 focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const text = await navigator.clipboard.readText();
+                  if (looksLikeBankNotification(text)) {
+                    const parsed = parseBankNotification(text);
+                    if (parsed && parsed.confidence > 0.5) {
+                      setClipboardDetected(parsed);
+                      return;
+                    }
+                  }
+                  // Fallback: just paste the text
+                  setDescription(text.slice(0, 100));
+                } catch (e) {
+                  console.debug("Clipboard read failed:", e);
+                }
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium text-secondary hover:text-primary transition-colors"
+              aria-label="Paste dari clipboard"
+            >
+              <Clipboard size={14} />
+              <span className="hidden sm:inline">Paste</span>
+            </button>
+          </div>
         </div>
 
         {/* Notes */}

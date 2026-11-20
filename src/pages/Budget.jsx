@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, TrendingUp, AlertCircle, CheckCircle } from "lucide-react";
 import { db, withSync, withUpdatedAt, softDelete } from "../db/db";
 import Header from "../components/Header";
 import BudgetRow from "../components/BudgetRow";
@@ -11,9 +11,11 @@ import {
   monthKeyRange,
   formatRupiah,
 } from "../utils/format";
+import { calculateBudgetHealthScore } from "../utils/analytics";
 
 export default function Budget() {
   const [month, setMonth] = useState(monthKey());
+  const [healthScore, setHealthScore] = useState(null);
   const { from, to } = monthKeyRange(month);
 
   const categories = useLiveQuery(
@@ -43,6 +45,11 @@ export default function Budget() {
         .toArray(),
     [from, to]
   );
+
+  // Calculate health score for current month
+  useEffect(() => {
+    calculateBudgetHealthScore().then(setHealthScore);
+  }, [transactions?.length, budgets?.length, categories?.length]);
 
   const budgetMap = useMemo(() => {
     const map = {};
@@ -87,6 +94,11 @@ export default function Budget() {
     <div className="min-h-screen bg-surface pb-24">
       <Header title="Budget" showBack />
       <main className="mx-auto max-w-md space-y-5 px-4 pt-4">
+        {/* Health Score Card */}
+        {healthScore && (
+          <BudgetHealthScoreCard data={healthScore} />
+        )}
+
         {/* Month switcher */}
         <div className="flex items-center justify-between rounded-full border border-outline-variant bg-surface-container-lowest px-2 py-1.5">
           <button
@@ -170,6 +182,68 @@ export default function Budget() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+/* --- Budget Health Score Card --- */
+function BudgetHealthScoreCard({ data }) {
+  const { score, grade, gradeColor, gradeLabel, breakdown, details } = data;
+
+  const components = [
+    { key: "budgetAdherence", label: "Kepatuhan Budget", icon: <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> },
+    { key: "savingsScore", label: "Menabung", icon: <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+    { key: "trackingConsistency", label: "Konsisten Mencatat", icon: <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg> },
+    { key: "incomeExpenseScore", label: "Rasio Keluar/Masuk", icon: <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
+    { key: "trendScore", label: "Tren Bulanan", icon: <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg> },
+  ];
+
+  return (
+    <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 shadow-card">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl" style={{ backgroundColor: `${gradeColor}20`, color: gradeColor }}>
+            <span className="font-display text-xl font-bold">{grade}</span>
+          </div>
+          <div>
+            <p className="font-display text-lg font-semibold text-on-surface">Skor Budget: {score}/100</p>
+            <p className="text-sm font-medium" style={{ color: gradeColor }}>{gradeLabel}</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {components.map(({ key, label, icon }) => (
+          <div key={key} className="flex items-center gap-3">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: `${gradeColor}15`, color: gradeColor }}>
+              {icon}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-on-surface">{label}</span>
+              </div>
+              <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-surface-container-high">
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${breakdown[key]}%`, backgroundColor: breakdown[key] >= 70 ? "#2f8f4e" : breakdown[key] >= 50 ? "#e0a72c" : "#c14f3d" }}
+                />
+              </div>
+            </div>
+            <span className="shrink-0 font-display font-semibold text-on-surface">{breakdown[key]}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-outline-variant grid grid-cols-2 gap-4 text-center">
+        <div>
+          <p className="font-display text-lg font-semibold text-on-surface">{details.savingsRate}%</p>
+          <p className="text-[10px] text-on-surface-variant uppercase tracking-wide">Tingkat Menabung</p>
+        </div>
+        <div>
+          <p className="font-display text-lg font-semibold" style={{ color: details.expenseRatio > 90 ? "#c14f3d" : "#76777d" }}>{details.expenseRatio}%</p>
+          <p className="text-[10px] text-on-surface-variant uppercase tracking-wide">Rasio Keluar/Masuk</p>
+        </div>
+      </div>
     </div>
   );
 }
