@@ -1,16 +1,34 @@
-import { useState, useEffect, useRef } from "react";
-import { ArrowUpRight, ArrowDownLeft, RefreshCw, CheckCircle, XCircle, AlertCircle, Send, Download, Smartphone, Wifi, X } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  ArrowUpRight, ArrowDownLeft, RefreshCw, CheckCircle, XCircle, AlertCircle,
+  Send, Download, Smartphone, Wifi, X, ChevronRight, ChevronLeft,
+  Database, Table, Eye, RotateCcw, Settings, WifiOff,
+  ArrowUpDown, GitCompare, FileText, Clock, Shield
+} from "lucide-react";
 import QRCodeDisplay from "./QRCodeDisplay";
 import QRCodeScanner from "./QRCodeScanner";
-import { P2PSyncConnection, exportAllDataForSync, mergeReceivedData, signalingToQRData, qrDataToSignaling } from "../utils/p2pSync";
+import {
+  P2PSyncConnection,
+  exportAllDataForSync,
+  mergeReceivedData,
+  signalingToQRData,
+  qrDataToSignaling,
+  generateDiffPreview,
+  compressData,
+  SYNC_TABLES,
+  TABLE_CATEGORIES,
+  getDefaultSelectedTables,
+  getAllTableKeys,
+} from "../utils/p2pSync";
 import { db } from "../db/db";
 
 /**
  * P2P Sync Page - Kirim/Terima data via QR Code + WebRTC
+ * With: Table selection, Preview diff, Auto-retry, Desktop-friendly UI
  */
 export default function P2PSyncPage({ onClose }) {
   const [mode, setMode] = useState(null); // 'send' | 'receive' | 'confirm'
-  const [step, setStep] = useState(0); // 0: qr1, 1: qr2, 2: connecting, 3: transferring, 4: done
+  const [step, setStep] = useState(0); // 0: qr1, 1: qr2, 2: connecting, 3: transferring, 4: done, 5: preview
   const [status, setStatus] = useState("");
   const [error, setError] = useState(null);
   const [offerData, setOfferData] = useState(null);
@@ -19,27 +37,51 @@ export default function P2PSyncPage({ onClose }) {
   const [scanResult, setScanResult] = useState(null);
   const [showScanner, setShowScanner] = useState(false);
   const [mergeStats, setMergeStats] = useState(null);
+  const [diffPreview, setDiffPreview] = useState(null);
+  const [selectedTables, setSelectedTables] = useState(() => getDefaultSelectedTables());
+  const [showTableSelector, setShowTableSelector] = useState(false);
+  const [conflictResolution, setConflictResolution] = useState('remote-wins');
+  const [connectionState, setConnectionState] = useState('disconnected');
+  const [retryCount, setRetryCount] = useState(0);
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const connectionRef = useRef(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
     isMountedRef.current = true;
-    return () => { isMountedRef.current = false; };
+    // Detect desktop
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 768);
+    };
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => {
+      isMountedRef.current = false;
+      window.removeEventListener('resize', checkDesktop);
+    };
   }, []);
 
-  const updateStatus = (msg) => {
+  const updateStatus = useCallback((msg) => {
     if (isMountedRef.current) setStatus(msg);
-  };
+  }, []);
 
-  const handleError = (err) => {
+  const handleError = useCallback((err) => {
     console.error("Sync error:", err);
     if (isMountedRef.current) {
       setError(err.message || "Terjadi kesalahan");
-      setStep(0);
-      setMode(null);
+      // Don't auto-reset on error, let user decide
     }
-  };
+  }, []);
+
+  const handleConnectionStateChange = useCallback((state) => {
+    if (isMountedRef.current) {
+      setConnectionState(state.ice || state.connection || state.dataChannel || 'disconnected');
+      if (state.ice === 'connected' || state.connection === 'connected') {
+        setRetryCount(0);
+      }
+    }
+  }, []);
 
   // --- SEND FLOW ---
   async function startSend() {
@@ -49,20 +91,23 @@ export default function P2PSyncPage({ onClose }) {
     setStatus("Mempersiapkan data...");
 
     try {
-      connectionRef.current = new P2PSyncConnection();
+      connectionRef.current = new P2PSyncConnection({
+        autoRetry: true,
+        maxRetries: 5,
+        retryDelay: 3000,
+      });
       connectionRef.current.setCallbacks({
         onStatusChange: updateStatus,
         onError: handleError,
-        onDataReceived: null, // Sender doesn't receive data
+        onDataReceived: null,
+        onConnectionStateChange: handleConnectionStateChange,
       });
 
-      // Export data
       updateStatus("Mengekspor data...");
-      const data = await exportAllDataForSync(db);
-      const compressed = await compressForTransfer(data);
-      window.__syncDataToSend = compressed; // Store temporarily
+      const data = await exportAllDataForSync(db, selectedTables.length === getAllTableKeys().length ? null : selectedTables);
+      const compressed = await compressData(data);
+      window.__syncDataToSend = compressed;
 
-      // Create offer
       updateStatus("Membuat kode undangan...");
       const offer = await connectionRef.current.createOffer();
       setOfferData(signalingToQRData(offer));
@@ -74,7 +119,6 @@ export default function P2PSyncPage({ onClose }) {
   }
 
   async function onReceiverScannedOffer() {
-    // Receiver scanned our offer QR, now waiting for them to scan answer QR
     setStep(2);
     updateStatus("Menunggu penerima scan QR jawaban...");
   }
@@ -94,7 +138,6 @@ export default function P2PSyncPage({ onClose }) {
       await connectionRef.current.setRemoteAnswer(answer);
       updateStatus("Terhubung! Mengirim data...");
 
-      // Send data
       await connectionRef.current.sendData(window.__syncDataToSend);
       delete window.__syncDataToSend;
 
@@ -112,11 +155,16 @@ export default function P2PSyncPage({ onClose }) {
     setError(null);
     setStatus("Siap menerima...");
 
-    connectionRef.current = new P2PSyncConnection();
+    connectionRef.current = new P2PSyncConnection({
+      autoRetry: true,
+      maxRetries: 5,
+      retryDelay: 3000,
+    });
     connectionRef.current.setCallbacks({
       onStatusChange: updateStatus,
       onError: handleError,
       onDataReceived: handleReceivedData,
+      onConnectionStateChange: handleConnectionStateChange,
     });
   }
 
@@ -147,10 +195,31 @@ export default function P2PSyncPage({ onClose }) {
   }
 
   async function handleReceivedData(data) {
-    updateStatus("Menerima data, menggabungkan...");
+    updateStatus("Menerima data, mempersiapkan preview...");
 
     try {
-      const stats = await mergeReceivedData(db, data);
+      // Store for merge later
+      window.__receivedData = data;
+      // Generate diff preview first
+      const diff = await generateDiffPreview(db, data, selectedTables.length === getAllTableKeys().length ? null : selectedTables);
+      setDiffPreview(diff);
+      setStep(5); // Preview step
+      updateStatus("Preview siap - Silakan konfirmasi");
+    } catch (e) {
+      handleError(e);
+    }
+  }
+
+  async function confirmMerge() {
+    if (!diffPreview) return;
+    updateStatus("Menggabungkan data...");
+
+    try {
+      const stats = await mergeReceivedData(db, window.__receivedData, {
+        selectedTables: selectedTables.length === getAllTableKeys().length ? null : selectedTables,
+        conflictResolution,
+      });
+      delete window.__receivedData;
       setMergeStats(stats);
       setStep(4);
       updateStatus("Selesai! Data berhasil digabungkan");
@@ -169,6 +238,11 @@ export default function P2PSyncPage({ onClose }) {
     setScanResult(null);
     setShowScanner(false);
     setMergeStats(null);
+    setDiffPreview(null);
+    setSelectedTables(getDefaultSelectedTables());
+    setConflictResolution('remote-wins');
+    setConnectionState('disconnected');
+    setRetryCount(0);
     connectionRef.current?.close();
     connectionRef.current = null;
   }
@@ -181,7 +255,6 @@ export default function P2PSyncPage({ onClose }) {
     setScanResult(result);
     setShowScanner(false);
 
-    // Process based on current step
     if (mode === "send" && step === 1) {
       onReceiverScannedOffer();
     } else if (mode === "send" && step === 2) {
@@ -193,17 +266,34 @@ export default function P2PSyncPage({ onClose }) {
     }
   }
 
-  // Render current view
-  if (!mode) {
-    return renderModeSelection();
-  }
+  // Table selection handlers
+  const toggleTable = (tableKey) => {
+    setSelectedTables(prev => prev.includes(tableKey)
+      ? prev.filter(t => t !== tableKey)
+      : [...prev, tableKey]);
+  };
 
-  if (showScanner) {
-    return renderScanner();
-  }
+  const toggleCategory = (categoryKey) => {
+    const category = TABLE_CATEGORIES.find(c => c.key === categoryKey);
+    if (!category) return;
+    const allInCategory = category.tables.every(t => selectedTables.includes(t));
+    setSelectedTables(prev => allInCategory
+      ? prev.filter(t => !category.tables.includes(t))
+      : [...new Set([...prev, ...category.tables])]);
+  };
+
+  const selectAllTables = () => setSelectedTables(getAllTableKeys());
+  const selectDefaultTables = () => setSelectedTables(getDefaultSelectedTables());
+
+  // Render
+  if (!mode) return renderModeSelection();
+  if (showScanner) return renderScanner();
 
   return renderSyncProgress();
 
+  // ============================================
+  // MODE SELECTION
+  // ============================================
   function renderModeSelection() {
     return (
       <div className="min-h-screen bg-surface pb-24">
@@ -213,9 +303,11 @@ export default function P2PSyncPage({ onClose }) {
           </button>
           <h1 className="font-display text-lg font-semibold text-on-surface">Sinkronkan Perangkat</h1>
         </header>
-        <main className="mx-auto max-w-md space-y-4 px-4 pt-6 pb-24">
+        <main className={`mx-auto ${isDesktop ? 'max-w-3xl' : 'max-w-md'} space-y-4 px-4 pt-6 pb-24`}>
           <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-6 text-center">
-            <Wifi className="h-12 w-12 mx-auto text-primary mb-4" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary mx-auto mb-4">
+              <Wifi className="h-7 w-7" />
+            </div>
             <h2 className="font-display text-lg font-semibold text-on-surface mb-2">Pilih Mode</h2>
             <p className="text-sm text-on-surface-variant mb-6">
               Transfer data langsung antar perangkat via QR Code + WebRTC.<br/>
@@ -258,13 +350,38 @@ export default function P2PSyncPage({ onClose }) {
               <li>Pengirim: Tampilkan QR → Penerima scan</li>
               <li>Penerima: Tampilkan QR jawaban → Pengirim scan</li>
               <li>Transfer otomatis mulai via WiFi/Bluetooth</li>
+              <li><strong>Preview diff</strong> sebelum merge (mode Terima)</li>
             </ol>
+          </div>
+
+          {/* Table Selection Preview */}
+          <div className="rounded-lg border border-dashed border-outline-variant bg-surface-container-lowest p-4">
+            <p className="font-medium mb-3">Data yang akan disinkronkan: <span className="text-primary">{selectedTables.length}/{getAllTableKeys().length} tabel</span></p>
+            <div className="flex flex-wrap gap-1">
+              {SYNC_TABLES.map(t => (
+                <span
+                  key={t.key}
+                  className={`px-2 py-1 rounded text-xs ${selectedTables.includes(t.key) ? 'bg-primary text-on-primary' : 'bg-surface-container-high text-on-surface-variant'}`}
+                >
+                  {t.icon} {t.label}
+                </span>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowTableSelector(true)}
+              className="mt-3 text-sm text-primary hover:underline"
+            >
+              Ubah pilihan tabel
+            </button>
           </div>
         </main>
       </div>
     );
   }
 
+  // ============================================
+  // SCANNER
+  // ============================================
   function renderScanner() {
     return (
       <div className="fixed inset-0 z-50 flex flex-col bg-surface">
@@ -282,6 +399,9 @@ export default function P2PSyncPage({ onClose }) {
     );
   }
 
+  // ============================================
+  // SYNC PROGRESS
+  // ============================================
   function renderSyncProgress() {
     const steps = mode === "send" ? [
       { label: "Data diekspor", icon: "📦" },
@@ -294,6 +414,7 @@ export default function P2PSyncPage({ onClose }) {
       { label: "QR Undangan", icon: "📋" },
       { label: "QR Jawaban", icon: "📋" },
       { label: "Transfer", icon: "📡" },
+      { label: isDesktop ? "Preview" : "Preview", icon: "👁️" },
       { label: "Selesai", icon: "✅" },
     ];
 
@@ -302,18 +423,31 @@ export default function P2PSyncPage({ onClose }) {
                      step === 2 ? (mode === "send" ? "QR Jawaban (tampilkan ke pengirim)" : "QR Jawaban (tampilkan ke pengirim)") : null;
     const canScan = (mode === "send" && (step === 1 || step === 2)) || (mode === "receive" && (step === 0 || step === 2));
 
+    const containerClass = isDesktop ? 'max-w-3xl' : 'max-w-md';
+
     return (
       <div className="min-h-screen bg-surface pb-24">
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-outline-variant bg-surface-container-lowest px-4 py-3">
           <button onClick={resetAll} className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant active:bg-surface-container-high" aria-label="Kembali">
             <X className="h-5 w-5" />
           </button>
-          <h1 className="font-display text-lg font-semibold text-on-surface">
-            {mode === "send" ? "Kirim Data" : "Terima Data"}
-          </h1>
-          <span className="w-9" />
+          <div className="flex-1 text-center">
+            <h1 className="font-display text-lg font-semibold text-on-surface">
+              {mode === "send" ? "Kirim Data" : "Terima Data"}
+            </h1>
+            <p className="text-xs text-on-surface-variant">
+              {isDesktop ? 'Desktop Mode' : 'Mobile Mode'} • Step {step + 1} of {steps.length}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`flex h-2 w-2 rounded-full ${connectionState === 'connected' || connectionState === 'completed' ? 'bg-success' : connectionState === 'failed' ? 'bg-danger' : 'bg-warning'}`} />
+            <span className="text-xs text-on-surface-variant capitalize">{connectionState}</span>
+            {retryCount > 0 && (
+              <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded">Retry: {retryCount}</span>
+            )}
+          </div>
         </header>
-        <main className="mx-auto max-w-md space-y-4 px-4 pt-4">
+        <main className={`mx-auto ${containerClass} space-y-4 px-4 pt-4`}>
           {/* Progress Steps */}
           <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
             <div className="flex items-center justify-between">
@@ -339,15 +473,20 @@ export default function P2PSyncPage({ onClose }) {
             </div>
           </div>
 
-          {/* Status */}
+          {/* Status Card */}
           <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4 min-h-[80px]">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                {step === 3 ? <RefreshCw className="h-5 w-5 animate-spin" /> : step === 4 ? <CheckCircle className="h-5 w-5" /> : error ? <AlertCircle className="h-5 w-5 text-danger" /> : <Smartphone className="h-5 w-5" />}
+                {step === 3 ? <RefreshCw className="h-5 w-5 animate-spin" /> :
+                 step === 4 ? <CheckCircle className="h-5 w-5" /> :
+                 step === 5 ? <Eye className="h-5 w-5" /> :
+                 error ? <AlertCircle className="h-5 w-5 text-danger" /> :
+                 <Smartphone className="h-5 w-5" />}
               </div>
               <div className="flex-1">
                 <p className="font-medium text-on-surface">{status || "Menunggu..."}</p>
                 {error && <p className="text-sm text-danger mt-1">{error}</p>}
+                {retryCount > 0 && <p className="text-xs text-warning mt-1">Auto-retry attempt: {retryCount}/5</p>}
               </div>
             </div>
           </div>
@@ -358,7 +497,7 @@ export default function P2PSyncPage({ onClose }) {
               <h3 className="mb-3 font-display text-sm font-semibold text-on-surface text-center">{qrLabel}</h3>
               <QRCodeDisplay
                 data={qrToShow}
-                size={256}
+                size={isDesktop ? 300 : 256}
                 label={step === 1 ? "Scan QR ini" : "Tampilkan QR ini"}
                 onDownload={() => {}}
               />
@@ -370,6 +509,9 @@ export default function P2PSyncPage({ onClose }) {
             </div>
           )}
 
+          {/* Preview Diff (Step 5) */}
+          {step === 5 && diffPreview && renderDiffPreview()}
+
           {/* Actions */}
           <div className="space-y-2">
             {canScan && (
@@ -380,6 +522,38 @@ export default function P2PSyncPage({ onClose }) {
                 <Smartphone className="h-5 w-5 inline mr-2" />
                 Scan QR {step === 1 ? "Undangan" : step === 2 ? "Jawaban" : ""}
               </button>
+            )}
+
+            {step === 5 && (
+              <>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConflictResolution('remote-wins')}
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-medium ${conflictResolution === 'remote-wins' ? 'bg-primary text-on-primary' : 'border border-outline-variant bg-surface-container-lowest text-on-surface'}`}
+                  >
+                    Remote wins (default)
+                  </button>
+                  <button
+                    onClick={() => setConflictResolution('local-wins')}
+                    className={`flex-1 rounded-lg py-2.5 text-sm font-medium ${conflictResolution === 'local-wins' ? 'bg-primary text-on-primary' : 'border border-outline-variant bg-surface-container-lowest text-on-surface'}`}
+                  >
+                    Local wins
+                  </button>
+                </div>
+                <button
+                  onClick={confirmMerge}
+                  className="w-full rounded-lg bg-primary py-3.5 text-center text-sm font-semibold text-on-primary"
+                >
+                  <Shield className="h-4 w-4 inline mr-2" />
+                  Konfirmasi & Merge
+                </button>
+                <button
+                  onClick={() => { setDiffPreview(null); setStep(mode === 'receive' ? 0 : 3); }}
+                  className="w-full rounded-lg border border-outline-variant py-3 text-center text-sm font-semibold text-on-surface-variant"
+                >
+                  Batal
+                </button>
+              </>
             )}
 
             {step === 4 && mergeStats && (
@@ -405,20 +579,17 @@ export default function P2PSyncPage({ onClose }) {
                     <p className="font-display text-xl font-semibold text-on-surface-variant">{mergeStats.skipped}</p>
                     <p className="text-[10px] text-on-surface-variant">Dilewati</p>
                   </div>
+                  {mergeStats.conflicts > 0 && (
+                    <div className="rounded-lg bg-danger/10 p-3 col-span-2">
+                      <p className="font-display text-xl font-semibold text-danger">{mergeStats.conflicts}</p>
+                      <p className="text-[10px] text-on-surface-variant">Konflik (dilewati)</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
 
-            {step === 4 && !mergeStats && (
-              <button
-                onClick={resetAll}
-                className="w-full rounded-lg border border-outline-variant py-3 text-center text-sm font-semibold text-on-surface"
-              >
-                Selesai
-              </button>
-            )}
-
-            {(step === 0 || error) && (
+            {(step === 0 || step === 4 || error) && (
               <button
                 onClick={resetAll}
                 className="w-full rounded-lg border border-outline-variant py-3 text-center text-sm font-semibold text-on-surface-variant"
@@ -435,44 +606,209 @@ export default function P2PSyncPage({ onClose }) {
               <li>Pastikan kedua perangkat di WiFi yang sama (atau hotspot satu ke satu)</li>
               <li>Jika lambat, coba dekatkan perangkat (Bluetooth/USB tethering)</li>
               <li>Jangan tutup aplikasi saat transfer berlangsung</li>
+              <li>Auto-retry aktif: akan coba reconnect otomatis jika putus (max 5x)</li>
+              <li>Desktop: QR lebih besar, layout 2 kolom, preview diff lebih lebar</li>
             </ul>
           </div>
         </main>
       </div>
     );
   }
-}
 
-/**
- * Compress data for transfer using Web Streams API
- */
-async function compressForTransfer(data) {
-  const jsonString = JSON.stringify(data);
+  // ============================================
+  // DIFF PREVIEW RENDER
+  // ============================================
+  function renderDiffPreview() {
+    if (!diffPreview) return null;
 
-  if (typeof CompressionStream !== 'undefined') {
-    const stream = new CompressionStream('gzip');
-    const writer = stream.writable.getWriter();
-    const encoder = new TextEncoder();
-    writer.write(encoder.encode(jsonString));
-    writer.close();
+    const { tables, totalInserted, totalUpdated, totalDeleted, totalSkipped, conflicts } = diffPreview;
 
-    const reader = stream.readable.getReader();
-    const chunks = [];
-    let done = false;
-    while (!done) {
-      const { value, done: readerDone } = await reader.read();
-      done = readerDone;
-      if (value) chunks.push(value);
-    }
+    return (
+      <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-display text-lg font-semibold text-on-surface flex items-center gap-2">
+            <Eye className="h-5 w-5 text-primary" />
+            Preview Perubahan ({selectedTables.length} tabel)
+          </h3>
+          <span className="text-xs px-2 py-1 rounded bg-primary/10 text-primary">
+            {conflicts.length > 0 ? `${conflicts.length} konflik` : 'Tidak ada konflik'}
+          </span>
+        </div>
 
-    const compressed = new Uint8Array(chunks.reduce((acc, chunk) => acc + chunk.length, 0));
-    let offset = 0;
-    for (const chunk of chunks) {
-      compressed.set(chunk, offset);
-      offset += chunk.length;
-    }
-    return compressed;
+        {/* Summary Cards */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          <StatCard label="Baru" value={totalInserted} color="#2f8f4e" icon={<Database className="h-4 w-4" />} />
+          <StatCard label="Update" value={totalUpdated} color="#3b7dd8" icon={<ArrowUpDown className="h-4 w-4" />} />
+          <StatCard label="Hapus" value={totalDeleted} color="#c14f3d" icon={<XCircle className="h-4 w-4" />} />
+          <StatCard label="Lewati" value={totalSkipped} color="#76777d" icon={<Shield className="h-4 w-4" />} />
+        </div>
+
+        {/* Table Details */}
+        <div className="space-y-3 max-h-[400px] overflow-y-auto">
+          {Object.entries(tables).map(([tableKey, tableDiff]) => {
+            const tableMeta = SYNC_TABLES.find(t => t.key === tableKey);
+            const hasChanges = tableDiff.inserted.length + tableDiff.updated.length + tableDiff.deleted.length + tableDiff.conflicts.length > 0;
+            if (!hasChanges) return null;
+
+            return (
+              <details key={tableKey} className="rounded-lg border border-outline-variant bg-surface" defaultOpen>
+                <summary className="flex items-center justify-between p-3 cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">{tableMeta?.icon || '📄'}</span>
+                    <span className="font-medium text-on-surface">{tableMeta?.label || tableKey}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    {tableDiff.inserted.length > 0 && <span className="px-2 py-0.5 rounded bg-success/10 text-success">{tableDiff.inserted.length} baru</span>}
+                    {tableDiff.updated.length > 0 && <span className="px-2 py-0.5 rounded bg-primary/10 text-primary">{tableDiff.updated.length} update</span>}
+                    {tableDiff.deleted.length > 0 && <span className="px-2 py-0.5 rounded bg-danger/10 text-danger">{tableDiff.deleted.length} hapus</span>}
+                    {tableDiff.conflicts.length > 0 && <span className="px-2 py-0.5 rounded bg-warning/10 text-warning">{tableDiff.conflicts.length} konflik</span>}
+                  </div>
+                </summary>
+                <div className="p-3 border-t border-outline-variant space-y-2">
+                  {tableDiff.inserted.slice(0, 5).map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm text-success">
+                      <span className="w-5 text-center">+</span>
+                      <span className="truncate">{item.name}</span>
+                    </div>
+                  ))}
+                  {tableDiff.updated.slice(0, 5).map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm text-primary">
+                      <span className="w-5 text-center">↻</span>
+                      <span className="truncate">{item.name}</span>
+                      <span className="text-xs text-on-surface-variant ml-auto">
+                        {new Date(item.remoteUpdated).toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  {tableDiff.deleted.slice(0, 5).map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm text-danger">
+                      <span className="w-5 text-center">−</span>
+                      <span className="truncate">{item.name}</span>
+                    </div>
+                  ))}
+                  {tableDiff.conflicts.slice(0, 3).map(item => (
+                    <div key={item.id} className="flex items-center gap-2 text-sm text-warning p-2 rounded bg-warning/10">
+                      <span className="w-5 text-center">⚠</span>
+                      <span className="truncate">{item.name}</span>
+                      <span className="text-xs text-on-surface-variant ml-auto">Konflik</span>
+                    </div>
+                  ))}
+                  {(tableDiff.inserted.length > 5 || tableDiff.updated.length > 5 || tableDiff.deleted.length > 5) && (
+                    <p className="text-xs text-on-surface-variant text-center py-1">
+                      +{tableDiff.inserted.length - 5} lagi...
+                    </p>
+                  )}
+                </div>
+              </details>
+            );
+          })}
+        </div>
+
+        {conflicts.length > 0 && (
+          <div className="mt-4 p-3 rounded-lg border border-warning bg-warning/10">
+            <p className="font-medium text-warning mb-2 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4" />
+              Ditemukan {conflicts.length} konflik data
+            </p>
+            <p className="text-xs text-on-surface-variant">
+              Pilih strategi resolusi di bawah sebelum merge.
+            </p>
+          </div>
+        )}
+      </div>
+    );
   }
-
-  return new TextEncoder().encode(jsonString);
 }
+
+// ============================================
+// HELPER COMPONENTS
+// ============================================
+function StatCard({ label, value, color, icon }) {
+  return (
+    <div className="rounded-lg bg-surface p-3 text-center border border-outline-variant">
+      <div className="flex items-center justify-center gap-1 mb-1" style={{ color }}>
+        {icon}
+      </div>
+      <p className="font-display text-xl font-semibold" style={{ color }}>{value}</p>
+      <p className="text-[10px] text-on-surface-variant uppercase">{label}</p>
+    </div>
+  );
+}
+
+// ============================================
+// TABLE SELECTOR MODAL
+// ============================================
+function TableSelectorModal({ isOpen, onClose, selectedTables, onChange }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-black/30 backdrop-blur-sm" onClick={onClose}>
+      <div className="flex-1 flex items-end">
+        <div className="w-full rounded-t-2xl bg-surface shadow-xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-center pt-3">
+            <div className="h-1 w-10 rounded-full bg-outline-variant" />
+          </div>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-outline-variant">
+            <h3 className="font-display text-lg font-semibold text-on-surface">Pilih Tabel Data</h3>
+            <button onClick={onClose} className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-high">
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex gap-2">
+              <button onClick={() => onChange(getAllTableKeys())} className="flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest py-2 text-sm font-medium text-on-surface-variant">
+                Pilih Semua
+              </button>
+              <button onClick={() => onChange(getDefaultSelectedTables())} className="flex-1 rounded-lg border border-outline-variant bg-surface-container-lowest py-2 text-sm font-medium text-on-surface-variant">
+                Default (Harian)
+              </button>
+            </div>
+
+            {TABLE_CATEGORIES.map(category => (
+              <div key={category.key} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-on-surface-variant uppercase tracking-wide text-xs">{category.label}</h4>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={category.tables.every(t => selectedTables.includes(t))}
+                      onChange={e => onChange(e.target.checked
+                        ? [...new Set([...selectedTables, ...category.tables])]
+                        : selectedTables.filter(t => !category.tables.includes(t)))}
+                      className="h-4 w-4 rounded border-outline-variant text-primary"
+                    />
+                    <span className="text-xs text-on-surface-variant">Pilih semua</span>
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {category.tables.map(tableKey => {
+                    const meta = SYNC_TABLES.find(t => t.key === tableKey);
+                    const checked = selectedTables.includes(tableKey);
+                    return (
+                      <label key={tableKey} className={`flex items-center gap-2 rounded-lg p-3 cursor-pointer transition-colors ${checked ? 'bg-primary/5 border-primary/20' : 'bg-surface-container-lowest'} border ${checked ? 'border-primary/30' : 'border-outline-variant'}`}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => onChange(e.target.checked
+                            ? [...selectedTables, tableKey]
+                            : selectedTables.filter(t => t !== tableKey))}
+                          className="h-4 w-4 rounded border-outline-variant text-primary"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-on-surface flex items-center gap-1">
+                            {meta?.icon} {meta?.label}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

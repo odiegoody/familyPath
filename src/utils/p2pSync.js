@@ -4,60 +4,104 @@
  * Zero server - fully offline capable
  */
 
-// QR code library - using a minimal implementation
-// We'll use the browser's built-in capabilities or a tiny QR generator
+// ============================================
+// TABLE DEFINITIONS
+// ============================================
 
-/**
- * Generate QR code as data URL (SVG)
- * Simple QR code generator for signaling data
- */
-export function generateQRCodeSVG(text, size = 256) {
-  // Use a simple approach: create QR via external service or minimal implementation
-  // For production, we'd use a proper QR library. Here's a minimal approach:
+export const SYNC_TABLES = [
+  { key: 'members', label: 'Anggota Keluarga', icon: '👥', category: 'core' },
+  { key: 'categories', label: 'Kategori', icon: '🏷️', category: 'core' },
+  { key: 'transactions', label: 'Transaksi', icon: '💳', category: 'finance' },
+  { key: 'budgets', label: 'Budget', icon: '📊', category: 'finance' },
+  { key: 'goals', label: 'Target Tabungan', icon: '🎯', category: 'finance' },
+  { key: 'assets', label: 'Aset', icon: '🏠', category: 'wealth' },
+  { key: 'asset_value_updates', label: 'Nilai Aset', icon: '📈', category: 'wealth' },
+  { key: 'liabilities', label: 'Hutang/Piutang', icon: '💳', category: 'wealth' },
+  { key: 'liability_payments', label: 'Pembayaran Hutang', icon: '💰', category: 'wealth' },
+  { key: 'investments', label: 'Investasi', icon: '📈', category: 'wealth' },
+  { key: 'investment_contributions', label: 'Kontribusi Investasi', icon: '💰', category: 'wealth' },
+  { key: 'investment_value_updates', label: 'Nilai Investasi', icon: '📈', category: 'wealth' },
+  { key: 'investment_targets', label: 'Target Investasi', icon: '🎯', category: 'wealth' },
+];
 
-  // Using a data URI for a placeholder - in reality we'd use a real QR generator
-  // For now, we'll use the qrcode library via CDN or implement a simple one
+export const TABLE_CATEGORIES = [
+  { key: 'core', label: 'Inti (Wajib)', tables: ['members', 'categories'] },
+  { key: 'finance', label: 'Keuangan Harian', tables: ['transactions', 'budgets', 'goals'] },
+  { key: 'wealth', label: 'Kekayaan & Investasi', tables: ['assets', 'asset_value_updates', 'liabilities', 'liability_payments', 'investments', 'investment_contributions', 'investment_value_updates', 'investment_targets'] },
+];
 
-  // Simple QR generation using a lightweight approach
-  const qrSize = size;
-  const modules = generateQRModules(text);
-  const moduleCount = modules.length;
-  const modulePixelSize = qrSize / moduleCount;
+export function getAllTableKeys() {
+  return SYNC_TABLES.map(t => t.key);
+}
 
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${qrSize}" height="${qrSize}" viewBox="0 0 ${qrSize} ${qrSize}"><rect width="100%" height="100%" fill="white"/>`;
+export function getDefaultSelectedTables() {
+  // Default: core + finance (daily use)
+  return ['members', 'categories', 'transactions', 'budgets', 'goals'];
+}
 
-  for (let r = 0; r < moduleCount; r++) {
-    for (let c = 0; c < moduleCount; c++) {
-      if (modules[r][c]) {
-        const x = c * modulePixelSize;
-        const y = r * modulePixelSize;
-        svg += `<rect x="${x}" y="${y}" width="${modulePixelSize}" height="${modulePixelSize}" fill="black"/>`;
-      }
+// ============================================
+// QR CODE SIGNALING
+// ============================================
+
+export function signalingToQRData(signaling) {
+  return JSON.stringify({
+    v: 1,
+    t: signaling.type, // 'offer' or 'answer'
+    s: signaling.sdp,
+  });
+}
+
+export function qrDataToSignaling(qrData) {
+  try {
+    const parsed = JSON.parse(qrData);
+    if (parsed.v === 1 && parsed.t && parsed.s) {
+      return { type: parsed.t, sdp: parsed.s };
     }
+  } catch (e) {
+    console.error('Invalid QR data:', e);
   }
-  svg += '</svg>';
-
-  return `data:image/svg+xml;base64,${btoa(svg)}`;
+  return null;
 }
 
-/**
- * Minimal QR code module generator (version 1, level L)
- * This is a simplified implementation - for production use a proper library
- */
-function generateQRModules(text) {
-  // This is a placeholder - in reality we need a proper QR generator
-  // For now, return a simple pattern that represents the data
-  // We'll use a proper QR library in the component instead
-  return [];
+// ============================================
+// DATA EXPORT / IMPORT
+// ============================================
+
+export async function exportAllDataForSync(db, selectedTables = null) {
+  const tablesToExport = selectedTables || getAllTableKeys();
+  const data = {};
+
+  for (const table of tablesToExport) {
+    data[table] = await db[table].toArray();
+  }
+
+  data._meta = {
+    exportedAt: Date.now(),
+    version: 1,
+    appName: 'FamilyPath',
+    deviceId: getDeviceId(),
+    tables: tablesToExport,
+  };
+
+  return data;
 }
 
-/**
- * Compress data for transfer using CompressionStream API
- */
+function getDeviceId() {
+  let id = localStorage.getItem('familypath_device_id');
+  if (!id) {
+    id = 'device_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem('familypath_device_id', id);
+  }
+  return id;
+}
+
+// ============================================
+// COMPRESSION
+// ============================================
+
 export async function compressData(data) {
   const jsonString = JSON.stringify(data);
 
-  // Use CompressionStream (gzip) if available
   if (typeof CompressionStream !== 'undefined') {
     const stream = new CompressionStream('gzip');
     const writer = stream.writable.getWriter();
@@ -80,17 +124,12 @@ export async function compressData(data) {
       compressed.set(chunk, offset);
       offset += chunk.length;
     }
-
     return compressed;
   }
 
-  // Fallback: return raw JSON as Uint8Array
   return new TextEncoder().encode(jsonString);
 }
 
-/**
- * Decompress data received
- */
 export async function decompressData(compressed) {
   if (typeof DecompressionStream !== 'undefined') {
     const stream = new DecompressionStream('gzip');
@@ -113,84 +152,131 @@ export async function decompressData(compressed) {
       decompressed.set(chunk, offset);
       offset += chunk.length;
     }
-
     return JSON.parse(new TextDecoder().decode(decompressed));
   }
-
-  // Fallback
   return JSON.parse(new TextDecoder().decode(compressed));
 }
 
+// ============================================
+// DIFF / PREVIEW
+// ============================================
+
 /**
- * Export all FamilyPath data for sync
+ * Generate a diff preview between local and remote data
+ * Returns summary of what would change
  */
-export async function exportAllDataForSync(db) {
-  const tables = [
-    'members',
-    'categories',
-    'transactions',
-    'budgets',
-    'goals',
-    'assets',
-    'asset_value_updates',
-    'liabilities',
-    'liability_payments',
-    'investments',
-    'investment_contributions',
-    'investment_value_updates',
-    'investment_targets',
-  ];
-
-  const data = {};
-  for (const table of tables) {
-    data[table] = await db[table].toArray();
-  }
-
-  // Add metadata
-  data._meta = {
-    exportedAt: Date.now(),
-    version: 1,
-    appName: 'FamilyPath',
-    deviceId: getDeviceId(),
+export async function generateDiffPreview(db, receivedData, selectedTables = null) {
+  const tablesToCheck = selectedTables || getAllTableKeys();
+  const diff = {
+    tables: {},
+    totalInserted: 0,
+    totalUpdated: 0,
+    totalDeleted: 0,
+    totalSkipped: 0,
+    conflicts: [], // Records where both local and remote changed
   };
 
-  return data;
-}
+  for (const table of tablesToCheck) {
+    if (!receivedData[table]) continue;
 
-/**
- * Get or create device ID
- */
-function getDeviceId() {
-  let id = localStorage.getItem('familypath_device_id');
-  if (!id) {
-    id = 'device_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
-    localStorage.setItem('familypath_device_id', id);
+    const localRecords = await db[table].toArray();
+    const localMap = new Map(localRecords.map(r => [r.uuid || r.id, r]));
+    const remoteRecords = receivedData[table] || [];
+
+    const tableDiff = {
+      inserted: [],
+      updated: [],
+      deleted: [],
+      skipped: [],
+      conflicts: [],
+    };
+
+    for (const remoteRecord of remoteRecords) {
+      const localRecord = localMap.get(remoteRecord.uuid || remoteRecord.id);
+
+      if (remoteRecord.deleted === 1) {
+        if (localRecord) {
+          tableDiff.deleted.push({
+            id: remoteRecord.uuid || remoteRecord.id,
+            name: getRecordName(remoteRecord, table),
+            localUpdated: localRecord.updatedAt,
+            remoteUpdated: remoteRecord.updatedAt,
+          });
+        }
+        continue;
+      }
+
+      if (!localRecord) {
+        tableDiff.inserted.push({
+          id: remoteRecord.uuid || remoteRecord.id,
+          name: getRecordName(remoteRecord, table),
+        });
+      } else {
+        const localTime = localRecord.updatedAt || localRecord.createdAt || 0;
+        const remoteTime = remoteRecord.updatedAt || remoteRecord.createdAt || 0;
+
+        if (remoteTime > localTime) {
+          // Check if local also has changes (conflict)
+          const localChanged = localRecord.updatedAt > localRecord.createdAt;
+          const remoteChanged = remoteRecord.updatedAt > (remoteRecord.createdAt || 0);
+
+          if (localChanged && remoteChanged && localTime !== remoteTime) {
+            tableDiff.conflicts.push({
+              id: remoteRecord.uuid || remoteRecord.id,
+              name: getRecordName(remoteRecord, table),
+              localUpdated: localTime,
+              remoteUpdated: remoteTime,
+              localData: localRecord,
+              remoteData: remoteRecord,
+            });
+            diff.conflicts.push({ table, ...tableDiff.conflicts[tableDiff.conflicts.length - 1] });
+          } else {
+            tableDiff.updated.push({
+              id: remoteRecord.uuid || remoteRecord.id,
+              name: getRecordName(remoteRecord, table),
+              localUpdated: localTime,
+              remoteUpdated: remoteTime,
+            });
+          }
+        } else {
+          tableDiff.skipped.push({
+            id: remoteRecord.uuid || remoteRecord.id,
+            name: getRecordName(remoteRecord, table),
+          });
+        }
+      }
+    }
+
+    diff.tables[table] = tableDiff;
+    diff.totalInserted += tableDiff.inserted.length;
+    diff.totalUpdated += tableDiff.updated.length;
+    diff.totalDeleted += tableDiff.deleted.length;
+    diff.totalSkipped += tableDiff.skipped.length;
   }
-  return id;
+
+  return diff;
 }
 
-/**
- * Merge received data into local database
- * Uses Last-Write-Wins based on updatedAt
- */
-export async function mergeReceivedData(db, receivedData) {
-  const tables = [
-    'members',
-    'categories',
-    'transactions',
-    'budgets',
-    'goals',
-    'assets',
-    'asset_value_updates',
-    'liabilities',
-    'liability_payments',
-    'investments',
-    'investment_contributions',
-    'investment_value_updates',
-    'investment_targets',
-  ];
+function getRecordName(record, table) {
+  if (record.name) return record.name;
+  if (record.description) return record.description.slice(0, 30);
+  if (record.amount) return `${record.type || 'tx'} ${record.amount}`;
+  return record.uuid?.slice(0, 8) || record.id?.toString().slice(0, 8) || 'Unknown';
+}
 
-  let stats = { inserted: 0, updated: 0, deleted: 0, skipped: 0 };
+// ============================================
+// MERGE WITH OPTIONS
+// ============================================
+
+export async function mergeReceivedData(db, receivedData, options = {}) {
+  const {
+    selectedTables = null,
+    conflictResolution = 'remote-wins', // 'remote-wins' | 'local-wins' | 'manual'
+    dryRun = false,
+  } = options;
+
+  const tables = selectedTables || getAllTableKeys();
+  let stats = { inserted: 0, updated: 0, deleted: 0, skipped: 0, conflicts: 0 };
 
   for (const table of tables) {
     if (!receivedData[table]) continue;
@@ -201,30 +287,46 @@ export async function mergeReceivedData(db, receivedData) {
     for (const remoteRecord of receivedData[table]) {
       const localRecord = localMap.get(remoteRecord.uuid || remoteRecord.id);
 
-      // If remote is deleted (soft delete)
       if (remoteRecord.deleted === 1) {
-        if (localRecord) {
+        if (localRecord && !dryRun) {
           await db[table].update(localRecord.id, { deleted: 1, updatedAt: remoteRecord.updatedAt || Date.now() });
-          stats.deleted++;
         }
+        if (!dryRun) stats.deleted++;
         continue;
       }
 
       if (!localRecord) {
-        // New record - insert
-        await db[table].add({ ...remoteRecord, uuid: remoteRecord.uuid || crypto.randomUUID() });
+        if (!dryRun) {
+          await db[table].add({ ...remoteRecord, uuid: remoteRecord.uuid || crypto.randomUUID() });
+        }
         stats.inserted++;
       } else {
-        // Conflict resolution: Last-Write-Wins based on updatedAt
         const localTime = localRecord.updatedAt || localRecord.createdAt || 0;
         const remoteTime = remoteRecord.updatedAt || remoteRecord.createdAt || 0;
 
         if (remoteTime > localTime) {
-          // Remote is newer - update
-          await db[table].update(localRecord.id, { ...remoteRecord, id: localRecord.id });
+          if (!dryRun) {
+            await db[table].update(localRecord.id, { ...remoteRecord, id: localRecord.id });
+          }
           stats.updated++;
+        } else if (localTime > remoteTime) {
+          // Local is newer
+          if (conflictResolution === 'local-wins') {
+            if (!dryRun) {
+              // Keep local, do nothing
+            }
+            stats.skipped++;
+          } else if (conflictResolution === 'remote-wins') {
+            if (!dryRun) {
+              await db[table].update(localRecord.id, { ...remoteRecord, id: localRecord.id });
+            }
+            stats.updated++;
+          } else {
+            // Manual - skip for now
+            stats.conflicts++;
+            stats.skipped++;
+          }
         } else {
-          // Local is newer or equal - skip
           stats.skipped++;
         }
       }
@@ -234,14 +336,30 @@ export async function mergeReceivedData(db, receivedData) {
   return stats;
 }
 
-/**
- * WebRTC P2P Connection Manager
- */
+// ============================================
+// P2P CONNECTION WITH AUTO-RETRY
+// ============================================
+
 export class P2PSyncConnection {
-  constructor() {
+  constructor(options = {}) {
     this.peerConnection = null;
     this.dataChannel = null;
     this.isInitiator = false;
+    this.onDataReceived = null;
+    this.onStatusChange = null;
+    this.onError = null;
+    this.onConnectionStateChange = null;
+
+    // Auto-retry config
+    this.autoRetry = options.autoRetry !== false;
+    this.maxRetries = options.maxRetries || 3;
+    this.retryDelay = options.retryDelay || 2000;
+    this.currentRetry = 0;
+    this.isRetrying = false;
+
+    this.receivedChunks = [];
+    this.expectedTotalSize = 0;
+
     this.onDataReceived = null;
     this.onStatusChange = null;
     this.onError = null;
@@ -249,10 +367,11 @@ export class P2PSyncConnection {
     this.expectedTotalSize = 0;
   }
 
-  setCallbacks({ onDataReceived, onStatusChange, onError }) {
+  setCallbacks({ onDataReceived, onStatusChange, onError, onConnectionStateChange }) {
     this.onDataReceived = onDataReceived;
     this.onStatusChange = onStatusChange;
     this.onError = onError;
+    this.onConnectionStateChange = onConnectionStateChange;
   }
 
   _setStatus(status) {
@@ -264,52 +383,53 @@ export class P2PSyncConnection {
     this.onError?.(error);
   }
 
+  _notifyConnectionState(state) {
+    this.onConnectionStateChange?.(state);
+  }
+
   /**
    * Create offer (initiator)
    */
   async createOffer() {
     this.isInitiator = true;
+    this.currentRetry = 0;
+
     this.peerConnection = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
       ],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
     });
 
     this._setupPeerConnection();
-
-    // Create data channel
-    this.dataChannel = this.peerConnection.createDataChannel('familypath-sync', {
-      ordered: true,
-      maxRetransmits: 0,
-    });
     this._setupDataChannel();
 
-    // Create offer
     const offer = await this.peerConnection.createOffer();
     await this.peerConnection.setLocalDescription(offer);
-
-    // Wait for ICE gathering to complete
     await this._waitForIceGathering();
 
     return this.peerConnection.localDescription;
   }
 
-  /**
-   * Create answer (receiver)
-   */
   async createAnswer(offer) {
     this.isInitiator = false;
+    this.currentRetry = 0;
+
     this.peerConnection = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
       ],
+      iceTransportPolicy: 'all',
+      bundlePolicy: 'max-bundle',
     });
 
     this._setupPeerConnection();
 
-    // Handle incoming data channel
     this.peerConnection.ondatachannel = (event) => {
       this.dataChannel = event.channel;
       this._setupDataChannel();
@@ -318,15 +438,11 @@ export class P2PSyncConnection {
     await this.peerConnection.setRemoteDescription(offer);
     const answer = await this.peerConnection.createAnswer();
     await this.peerConnection.setLocalDescription(answer);
-
     await this._waitForIceGathering();
 
     return this.peerConnection.localDescription;
   }
 
-  /**
-   * Set remote answer (initiator)
-   */
   async setRemoteAnswer(answer) {
     await this.peerConnection.setRemoteDescription(answer);
   }
@@ -335,26 +451,43 @@ export class P2PSyncConnection {
     this.peerConnection.oniceconnectionstatechange = () => {
       const state = this.peerConnection.iceConnectionState;
       this._setStatus(`ICE: ${state}`);
+      this._notifyConnectionState({ ice: state });
 
       if (state === 'connected' || state === 'completed') {
         this._setStatus('Terhubung - Siap transfer');
+        this.currentRetry = 0; // Reset retry on success
       } else if (state === 'failed' || state === 'disconnected') {
-        this._handleError(new Error('Koneksi gagal atau terputus'));
+        this._setStatus(`Koneksi ${state === 'failed' ? 'gagal' : 'terputus'}`);
+        this._handleConnectionFailure();
       }
     };
 
     this.peerConnection.onconnectionstatechange = () => {
-      this._setStatus(`State: ${this.peerConnection.connectionState}`);
+      const state = this.peerConnection.connectionState;
+      this._setStatus(`State: ${state}`);
+      this._notifyConnectionState({ connection: state });
+
+      if (state === 'failed' || state === 'disconnected') {
+        this._handleConnectionFailure();
+      }
+    };
+
+    // Monitor data channel state
+    this.peerConnection.ondatachannel = (event) => {
+      this.dataChannel = event.channel;
+      this._setupDataChannel();
     };
   }
 
   _setupDataChannel() {
     this.dataChannel.onopen = () => {
       this._setStatus('Channel terbuka - Transfer dimulai');
+      this._notifyConnectionState({ dataChannel: 'open' });
     };
 
     this.dataChannel.onclose = () => {
       this._setStatus('Channel ditutup');
+      this._notifyConnectionState({ dataChannel: 'closed' });
     };
 
     this.dataChannel.onerror = (error) => {
@@ -366,8 +499,65 @@ export class P2PSyncConnection {
     };
   }
 
+  _handleConnectionFailure() {
+    if (!this.autoRetry || this.isRetrying) return;
+
+    if (this.currentRetry < this.maxRetries) {
+      this.currentRetry++;
+      this.isRetrying = true;
+      this._setStatus(`Koneksi terputus. Mencoba kembali (${this.currentRetry}/${this.maxRetries})...`);
+
+      setTimeout(() => {
+        this.isRetrying = false;
+        this._attemptReconnect();
+      }, this.retryDelay * this.currentRetry);
+    } else {
+      this._setStatus('Gagal reconnect setelah ' + this.maxRetries + ' percobaan');
+      this._handleError(new Error('Max retries exceeded'));
+    }
+  }
+
+  async _attemptReconnect() {
+    try {
+      this._setStatus('Mencoba reconnect...');
+
+      // For receiver: need to re-create answer
+      // For sender: need to re-create offer
+      // This is complex - for now just restart the connection
+      if (this.peerConnection) {
+        this.peerConnection.close();
+      }
+
+      // Recreate peer connection
+      this.peerConnection = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+        ],
+      });
+
+      this._setupPeerConnection();
+      this._setupDataChannel();
+
+      if (this.isInitiator) {
+        const offer = await this.peerConnection.createOffer();
+        await this.peerConnection.setLocalDescription(offer);
+        await this._waitForIceGathering();
+        // Need to send new offer via QR
+        this._setStatus('Koneksi baru dibuat. Silakan scan QR baru.');
+        // Could emit event for UI to show new QR
+      } else {
+        // Receiver would need new offer from sender
+        this._setStatus('Menunggu offer baru dari pengirim...');
+      }
+    } catch (e) {
+      console.error('Reconnect failed:', e);
+      this._handleConnectionFailure();
+    }
+  }
+
   async _handleMessage(data) {
-    // First message might be metadata (file size, etc.)
     if (typeof data === 'string') {
       try {
         const meta = JSON.parse(data);
@@ -381,12 +571,16 @@ export class P2PSyncConnection {
           this._assembleAndProcess();
           return;
         }
+        if (meta.type === 'ping') {
+          // Respond to keep-alive
+          this.dataChannel.send(JSON.stringify({ type: 'pong' }));
+          return;
+        }
       } catch (e) {
         // Not JSON, treat as binary chunk
       }
     }
 
-    // Binary chunk
     if (data instanceof ArrayBuffer || data instanceof Blob) {
       const chunk = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : new Uint8Array(data);
       this.receivedChunks.push(chunk);
@@ -410,14 +604,10 @@ export class P2PSyncConnection {
 
     this._setStatus('Dekompresi & memproses...');
     const data = await decompressData(combined);
-
     this.onDataReceived?.(data);
     this._setStatus('Selesai!');
   }
 
-  /**
-   * Send data (initiator)
-   */
   async sendData(data) {
     if (!this.dataChannel || this.dataChannel.readyState !== 'open') {
       throw new Error('Data channel not ready');
@@ -427,17 +617,17 @@ export class P2PSyncConnection {
     const compressed = await compressData(data);
 
     this._setStatus('Mengirim metadata...');
-    // Send metadata first
-    this.dataChannel.send(JSON.stringify({
-      type: 'meta',
-      size: compressed.length,
-    }));
+    this.dataChannel.send(JSON.stringify({ type: 'meta', size: compressed.length }));
 
-    // Send in chunks (16KB each)
     const chunkSize = 16384;
     let sent = 0;
 
     for (let i = 0; i < compressed.length; i += chunkSize) {
+      // Check if channel is still open
+      if (this.dataChannel.readyState !== 'open') {
+        throw new Error('Channel closed during transfer');
+      }
+
       const chunk = compressed.slice(i, i + chunkSize);
       this.dataChannel.send(chunk.buffer);
       sent += chunk.length;
@@ -445,11 +635,9 @@ export class P2PSyncConnection {
       const progress = (sent / compressed.length * 100).toFixed(1);
       this._setStatus(`Mengirim... ${progress}% (${this._formatSize(sent)})`);
 
-      // Small delay to avoid overwhelming the channel
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise(r => setTimeout(r, 5));
     }
 
-    // Send completion signal
     this.dataChannel.send(JSON.stringify({ type: 'complete' }));
     this._setStatus('Data terkirim - Menunggu konfirmasi');
   }
@@ -478,39 +666,10 @@ export class P2PSyncConnection {
   }
 
   close() {
+    this.autoRetry = false;
     this.dataChannel?.close();
     this.peerConnection?.close();
     this.peerConnection = null;
     this.dataChannel = null;
   }
-}
-
-/**
- * Generate QR code for signaling data using a simple approach
- * We'll use a proper QR library in the component
- */
-export function signalingToQRData(signaling) {
-  return JSON.stringify({
-    v: 1,
-    t: signaling.type, // 'offer' or 'answer'
-    s: signaling.sdp,
-  });
-}
-
-/**
- * Parse QR data back to signaling
- */
-export function qrDataToSignaling(qrData) {
-  try {
-    const parsed = JSON.parse(qrData);
-    if (parsed.v === 1 && parsed.t && parsed.s) {
-      return {
-        type: parsed.t,
-        sdp: parsed.s,
-      };
-    }
-  } catch (e) {
-    console.error('Invalid QR data:', e);
-  }
-  return null;
 }
